@@ -70,10 +70,11 @@ def parse_segment(segment, height):
         return floats
 
 
-def get_config(useless_set=set()):
+def get_config(fusedcura_config, useless_set=set()):
     preferred_order = ['resolution', 'shell', 'infill', 'material', 'speed', 'cooling', 'support', 'travel',
                        'machine_settings', 'experimental', 'platform_adhesion']
-    loaded = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(Path(_settings_file).read_text())['settings']
+    file_content = Path(fusedcura_config.get('fdmprinterfile')).read_text()
+    loaded = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(file_content)['settings']
     other_keys = [k for k in loaded.keys() if k not in set(preferred_order)]
     re_ordered_dict = OrderedDict([(k, loaded[k]) for k in preferred_order + other_keys])
 

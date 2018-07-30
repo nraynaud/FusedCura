@@ -92,7 +92,7 @@ def read_configuration():
         return configuration['configuration']
     except OSError:
         pass
-    return {}
+    return None
 
 
 def add_enum_input(key, node, _inputs, value):

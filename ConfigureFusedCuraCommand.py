@@ -33,10 +33,11 @@ class ConfigureFusedCuraCommand(Fusion360CommandBase):
     def on_create(self, command: Command, inputs: CommandInputs):
         txt = '<b>Fused Cura</b><br>A Connection between Fusion 360 and Cura Engine by Nicolas Raynaud<br>'
         txt += '<p>You will need to configure the path to your curaengine executable and your fdmprinter.def.json file before using.</p>'
-        text_box = inputs.addTextBoxCommandInput('text_box', 'Info', txt, 20, True)
+        text_box = inputs.addTextBoxCommandInput('text_box', 'Info', txt, 10, True)
         text_box.isFullWidth = True
-
         self.configuration = read_configuration()
+        if not self.configuration:
+            self.configuration = {}
         self.curaengine_input = inputs.addBoolValueInput('curaengine_file', 'CuraEngine executable', False, '', True)
         self.curaengine_input.text = self.configuration.get('curaengine', 'click to set')
         self.curaengine_input.tooltip = 'Click to select the CuraEngine executable file'

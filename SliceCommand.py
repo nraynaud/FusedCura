@@ -19,7 +19,7 @@ from .curaengine import run_engine, parse_segment, get_config
 from .messages import Slice, dict_to_setting_list, ObjectList, Object, LineType
 from .settings import setting_types, collect_changed_setting_if_different_from_parent, \
     setting_tree_to_dict_and_default, useless_settings, \
-    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings
+    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration
 from .util import event, recursive_inputs
 
 # https://gist.github.com/mRB0/740c25fdae3dc0b0ee7a
@@ -256,9 +256,12 @@ class SliceCommand(Fusion360CommandBase):
         threading.Thread(target=run_engine_in_other_thread, args=[slice_msg, endpoint]).start()
 
     def on_destroy(self, command: Command, inputs: CommandInputs, reason, input_values):
-        self.cancel_engine()
         AppObjects().app.unregisterCustomEvent(engine_event_id)
-        save_visibility(self.visibilities)
+        try:
+            self.cancel_engine()
+            save_visibility(self.visibilities)
+        except AttributeError:
+            pass
 
     def on_input_changed(self, command: Command, inputs: CommandInputs, changed_input, input_values):
         if self.file_input.id == changed_input.id:
@@ -296,7 +299,14 @@ class SliceCommand(Fusion360CommandBase):
                 shutil.copyfileobj(self.engine_endpoint['gcode_file'], out)
 
     def on_create(self, command: Command, inputs: CommandInputs):
+        command.isExecutedWhenPreEmpted = False
+        command.isAutoExecute = False
+        self.engine_event = AppObjects().app.registerCustomEvent(engine_event_id)
         self.engine_endpoint = None
+        configuration = read_configuration()
+        if not configuration:
+            AppObjects().ui.commandDefinitions.itemById('ConfigureFusedCuraCmd').execute()
+            return
         self.changed_settings = {}
         self.running_settings = {}
         self.running_models = None
@@ -341,7 +351,7 @@ class SliceCommand(Fusion360CommandBase):
             table.addCommandInput(v, (k.value - 1) // 3, ((k.value - 1) % 3) * 2)
 
         tab_settings.isEnabled = False
-        settings = get_config(useless_settings)
+        settings = get_config(configuration, useless_settings)
 
         (self.global_settings_definitions, self.global_settings_defaults) = setting_tree_to_dict_and_default(settings)
         self.changed_machine_settings = read_machine_settings(self.global_settings_definitions,
@@ -363,4 +373,3 @@ class SliceCommand(Fusion360CommandBase):
         recursive_inputs(settings, tab_settings.children, type_creator)
         print('unknown config types:', unknown_types)
         _create_visibility_checkboxes(self.visibilities, settings, tab_setting_vis.children, 0)
-        self.engine_event = AppObjects().app.registerCustomEvent(engine_event_id)

@@ -2,10 +2,11 @@ from collections import OrderedDict
 
 from adsk.core import Command, CommandInputs
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
+from .Fusion360Utilities.Fusion360Utilities import AppObjects
 from .curaengine import get_config
 from .settings import setting_types, collect_changed_setting_if_different_from_parent, setting_tree_to_dict_and_default, \
     useless_settings, save_machine_config, find_setting_in_stack, \
-    read_machine_settings
+    read_machine_settings, read_configuration
 from .util import recursive_inputs
 
 machine_settings_order = ['machine_name', 'machine_gcode_flavor', 'machine_width', 'machine_depth', 'machine_height',
@@ -36,7 +37,10 @@ class ConfigureMachineCommand(Fusion360CommandBase):
         save_machine_config(self.changed_machine_settings, self.global_settings_definitions)
 
     def on_create(self, command: Command, inputs: CommandInputs):
-        settings = get_config(useless_settings)
+        configuration = read_configuration()
+        if not configuration:
+            AppObjects().ui.commandDefinitions.itemById('ConfigureFusedCuraCmd').execute()
+        settings = get_config(configuration, useless_settings)
         (self.global_settings_definitions, self.global_settings_defaults) = setting_tree_to_dict_and_default(settings)
         self.changed_machine_settings = read_machine_settings(self.global_settings_definitions,
                                                               self.global_settings_defaults)
