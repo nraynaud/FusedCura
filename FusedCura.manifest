@@ -1,0 +1,13 @@
+{
+	"autodeskProduct":	"Fusion360",
+	"type":	"addin",
+	"id":	"77d37e22-0168-496f-bd18-98a5d34bd2ce",
+	"author":	"NRaynaud",
+	"description":	{
+		"":	"Slice your Fused Filament Fabrication 3D print directly in Fusion 360"
+	},
+	"version":	"0.1",
+	"runOnStartup":	true,
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
