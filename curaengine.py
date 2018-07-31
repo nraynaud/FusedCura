@@ -2,7 +2,7 @@ import array
 import json
 import socket
 import struct
-import subprocess
+from subprocess import Popen, PIPE
 from collections import OrderedDict
 from contextlib import closing
 from pathlib import Path
@@ -20,20 +20,24 @@ _CLOSE_SOCKET = 0xf0f0f0f0
 def run_engine(slice_message: Slice, event_handler, keep_alive_handler=None):
     encoded_message = Slice.dumps(slice_message)
     config = read_configuration()
+    print(dict(config))
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as server_socket:
         server_socket.bind(('127.0.0.1', 0))
         server_socket.listen(5)
         name = server_socket.getsockname()
-        subprocess.Popen([config['curaengine'], 'connect', "%s:%s" % name, '-v', '-j', config['fdmprinterfile']])
+        child_process = Popen([config['curaengine'], 'connect', "%s:%s" % name, '-v', '-j', config['fdmprinterfile']],
+                              stdout=PIPE, stderr=PIPE)
+        print(child_process)
+        print(child_process.poll())
         (client_socket, address) = server_socket.accept()
         client_socket.send(struct.pack("I", socket.htonl(_SIGNATURE)))
         client_socket.send(struct.pack("!I", len(encoded_message)))
         client_socket.send(struct.pack("!I", symbol_message_dict['cura.proto.Slice'].hash))
         client_socket.send(encoded_message)
         while 1:
-            res = client_socket.recv(4, socket.MSG_WAITALL)
-            if len(res) == 4:
-                unpacked = struct.unpack('>I', res)[0]
+            process = client_socket.recv(4, socket.MSG_WAITALL)
+            if len(process) == 4:
+                unpacked = struct.unpack('>I', process)[0]
                 if unpacked == 0:
                     if keep_alive_handler:
                         keep_alive_handler()
@@ -51,6 +55,7 @@ def run_engine(slice_message: Slice, event_handler, keep_alive_handler=None):
                 break
             else:
                 break
+        print(child_process.communicate())
 
 
 def _2_to_3(point2d_array, height):

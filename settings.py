@@ -5,6 +5,8 @@ from configparser import ConfigParser
 from adsk.core import DropDownStyles, ValueInput
 from .lib.appdirs import user_config_dir
 
+fdmprintfile = os.path.join(os.path.dirname(__file__), 'fdmprinter.def.json')
+
 useless_settings = {'machine_steps_per_mm_x', 'machine_steps_per_mm_y', 'machine_steps_per_mm_z',
                     'machine_steps_per_mm_e', 'machine_endstop_positive_direction_x',
                     'machine_endstop_positive_direction_y', 'machine_endstop_positive_direction_z',
@@ -89,6 +91,7 @@ def read_configuration():
     try:
         with open(general_configuration_file_path) as f:
             configuration.read_file(f)
+        configuration['configuration']['fdmprinterfile'] = fdmprintfile
         return configuration['configuration']
     except OSError:
         pass
