@@ -1,6 +1,8 @@
 from collections import OrderedDict
 
+import adsk.core
 from adsk.core import Command, CommandInputs
+from adsk.fusion import CustomGraphicsCoordinates, CustomGraphicsPointTypes
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
 from .curaengine import get_config
@@ -19,6 +21,25 @@ time_estimate_settings = ['machine_minimum_feedrate', 'machine_max_feedrate_x', 
 
 
 class ConfigureMachineCommand(Fusion360CommandBase):
+
+    def on_preview(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, args, input_values):
+        graphics = AppObjects().root_comp.customGraphicsGroups.add()
+        stack = [self.global_settings_defaults, self.changed_machine_settings]
+        max_x = find_setting_in_stack('machine_width', stack)
+        max_y = find_setting_in_stack('machine_depth', stack)
+        center_is_zero = find_setting_in_stack('machine_center_is_zero', stack)
+        c_x, c_y = (max_x / 2, max_y / 2) if center_is_zero else (0, 0)
+        origin = [0.0 - c_x, 0.0 - c_y, 0.0]
+        furthest_x = [max_x - c_x, 0.0 - c_y, 0.0]
+        furthest_corner = [max_x - c_x, max_y - c_y, 0.0]
+        furthest_y = [0.0 - c_x, max_y - c_y, 0.0]
+        loop = [origin, furthest_x, furthest_corner, furthest_y, origin]
+        coords = list([float(coord) for point in loop for coord in point])
+        limits = graphics.addLines(CustomGraphicsCoordinates.create(coords), [], True, [])
+        limits.weight = 2
+        if not center_is_zero:
+            graphics.addPointSet(CustomGraphicsCoordinates.create([max_x / 2, max_y / 2, 0]), [0],
+                                 CustomGraphicsPointTypes.UserDefinedCustomGraphicsPointType, 'origin/16x16.png')
 
     def on_input_changed(self, command: Command, inputs: CommandInputs, changed_input, input_values):
         setting_key = changed_input.id
