@@ -2,6 +2,7 @@ from .ConfigureFusedCuraCommand import ConfigureFusedCuraCommand
 from .ConfigureMachineCommand import ConfigureMachineCommand
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
 from .InfoCommand import InfoCommand
+from .ShowLogsCommand import ShowLogsCommand
 from .SliceCommand import SliceCommand
 
 commands = []
@@ -46,6 +47,16 @@ command_definitions = [
         'toolbar_panel_id': 'Slice',
         'command_promoted': False,
         'class': InfoCommand
+    },
+    {
+        'cmd_name': 'Logs',
+        'cmd_description': 'Engine Logs',
+        'cmd_id': 'LogCmd',
+        'cmd_resources': '',
+        'workspace': 'FusionSolidEnvironment',
+        'toolbar_panel_id': 'Slice',
+        'command_promoted': False,
+        'class': ShowLogsCommand
     }
 ]
 

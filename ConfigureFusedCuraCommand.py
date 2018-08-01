@@ -1,6 +1,7 @@
 from adsk.core import Command, CommandInputs, DialogResults
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
+from .curaengine import engine_log_file
 from .settings import read_configuration, save_configuration
 
 
@@ -22,11 +23,12 @@ class ConfigureFusedCuraCommand(Fusion360CommandBase):
         save_configuration(self.configuration)
 
     def on_create(self, command: Command, inputs: CommandInputs):
-        txt = '<b>Fused Cura</b><br>A Connection between Fusion 360 and Cura Engine by Nicolas Raynaud<br>'
+        txt = '<p>Fused Cura</b><br>A Connection between Fusion 360 and Cura Engine by Nicolas Raynaud<p>'
         txt += '<p>You will need to configure the path to your curaengine executable before using.</p>'
         txt += '<p>You can install <a href="https://github.com/Ultimaker/Cura/releases/tag/3.4.1">Cura</a> and the '
         txt += 'curaengine executable will be found in the installation directory.</p> '
-        text_box = inputs.addTextBoxCommandInput('text_box', 'Info', txt, 10, True)
+        txt += '<p>Logs are here: ' + engine_log_file + '</p>'
+        text_box = inputs.addTextBoxCommandInput('text_box', 'Info', txt, 15, True)
         text_box.isFullWidth = True
         self.configuration = read_configuration()
         if not self.configuration:
