@@ -1,8 +1,9 @@
 from collections import OrderedDict
 
 import adsk.core
-from adsk.core import Command, CommandInputs
-from adsk.fusion import CustomGraphicsCoordinates, CustomGraphicsPointTypes, CustomGraphicsAppearanceColorEffect
+from adsk.core import Command, CommandInputs, Point3D, Line3D, ObjectCollection, Circle3D
+from adsk.fusion import CustomGraphicsCoordinates, CustomGraphicsPointTypes, CustomGraphicsAppearanceColorEffect, \
+    TemporaryBRepManager, FeatureOperations
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
 from .curaengine import get_config
@@ -23,11 +24,12 @@ time_estimate_settings = ['machine_minimum_feedrate', 'machine_max_feedrate_x', 
 class ConfigureMachineCommand(Fusion360CommandBase):
 
     def on_preview(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, args, input_values):
-        graphics = AppObjects().root_comp.customGraphicsGroups.add()
+        ao = AppObjects()
+        graphics = ao.root_comp.customGraphicsGroups.add()
         stack = [self.global_settings_defaults, self.changed_machine_settings]
-        max_x = find_setting_in_stack('machine_width', stack)
-        max_y = find_setting_in_stack('machine_depth', stack)
-        max_z = find_setting_in_stack('machine_height', stack)
+        max_x = find_setting_in_stack('machine_width', stack) / 10
+        max_y = find_setting_in_stack('machine_depth', stack) / 10
+        max_z = find_setting_in_stack('machine_height', stack) / 10
         center_is_zero = find_setting_in_stack('machine_center_is_zero', stack)
         c_x, c_y = (max_x / 2, max_y / 2) if center_is_zero else (0, 0)
         origin = [0.0 - c_x, 0.0 - c_y, 0.0]
@@ -37,13 +39,13 @@ class ConfigureMachineCommand(Fusion360CommandBase):
         bottom_loop = [origin, furthest_x, furthest_corner, furthest_y]
         bottom_coords = list([float(coord) for point in bottom_loop for coord in point])
         bottom_custom = CustomGraphicsCoordinates.create(bottom_coords)
-        appearances = AppObjects().app.materialLibraries.itemByName('Fusion 360 Appearance Library').appearances
-        steel = AppObjects().design.appearances.itemByName('Steel - Satin')
-        if not steel:
-            steel = AppObjects().design.appearances.addByCopy(appearances.itemByName('Paint - Metal Flake (Blue)'),
-                                                              'Steel - Satin')
+        appearances = ao.app.materialLibraries.itemByName('Fusion 360 Appearance Library').appearances
+        bed_appearance = ao.design.appearances.itemByName('bedAppearance')
+        if not bed_appearance:
+            bed_appearance = ao.design.appearances.addByCopy(appearances.itemByName('Glass - Heavy Color (Blue)'),
+                                                             'bedAppearance')
         graphics.addMesh(bottom_custom, [0, 1, 2, 0, 2, 3], [], []).color = CustomGraphicsAppearanceColorEffect.create(
-            steel)
+            bed_appearance)
         limits = graphics.addLines(bottom_custom, [0, 1, 1, 2, 2, 3, 3, 0], False)
         limits.weight = 3
         limits.depthPriority = 1
