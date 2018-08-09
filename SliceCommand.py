@@ -68,7 +68,6 @@ class CancelException(Exception):
 def run_engine_in_other_thread(message, endpoint):
     def fire_if_not_canceled(info):
         handle_cancel()
-        print('firing ', info)
         AppObjects().app.fireCustomEvent(engine_event_id, info)
 
     def handle_cancel():
@@ -76,9 +75,10 @@ def run_engine_in_other_thread(message, endpoint):
             raise CancelException
 
     previous_time = int(time() / 2)
+    prefix = None
     with tempfile.TemporaryFile() as gcode_collector:
         def on_message(raw_received, received_type):
-            nonlocal previous_time
+            nonlocal previous_time, prefix
             new_time = int(time() / 5)
             if previous_time != new_time:
                 fire_if_not_canceled(received_type.symbol)
@@ -87,15 +87,17 @@ def run_engine_in_other_thread(message, endpoint):
 
             if received_type.symbol == 'cura.proto.PrintTimeMaterialEstimates':
                 endpoint['estimates'] = received_type.loads(raw_received)
-            if received_type.symbol == 'cura.proto.GCodePrefix':
                 complete_gcode = tempfile.NamedTemporaryFile()
-                complete_gcode.write(received_type.loads(raw_received).data)
+                complete_gcode.write(prefix)
                 gcode_collector.seek(0)
                 shutil.copyfileobj(gcode_collector, complete_gcode)
                 endpoint['gcode_file'] = complete_gcode
                 complete_gcode.seek(0)
+            if received_type.symbol == 'cura.proto.GCodePrefix':
+                prefix = received_type.loads(raw_received).data
             if received_type.symbol == 'cura.proto.GCodeLayer':
                 data = received_type.loads(raw_received).data
+                print('||' + str(data))
                 gcode_collector.write(data)
             if received_type.symbol == 'cura.proto.SlicingFinished':
                 endpoint['done'] = True
