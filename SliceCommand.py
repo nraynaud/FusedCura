@@ -12,15 +12,16 @@ from time import time
 
 from adsk.core import Command, Color, Vector3D, CommandInputs, DialogResults, CustomEventArgs, CustomEventHandler, \
     TableCommandInput, Line3D, Point3D
-from adsk.fusion import BRepBody, CustomGraphicsCoordinates, CustomGraphicsSolidColorEffect, TemporaryBRepManager, Path
+from adsk.fusion import BRepBody, CustomGraphicsCoordinates, CustomGraphicsSolidColorEffect, TemporaryBRepManager
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
-from .curaengine import run_engine, parse_segment, get_config
-from .messages import Slice, dict_to_setting_list, ObjectList, Object, LineType
+from .curaengine import run_engine, parse_segment
+from .messages import Slice, dict_to_setting_list, ObjectList, Object, LineType, Extruder
 from .settings import setting_types, collect_changed_setting_if_different_from_parent, \
     setting_tree_to_dict_and_default, useless_settings, \
-    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile
-from .util import event, recursive_inputs
+    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile, \
+    read_extruder_config, get_config
+from .util import event, recursive_inputs, display_machine
 
 # https://gist.github.com/mRB0/740c25fdae3dc0b0ee7a
 
@@ -97,7 +98,6 @@ def run_engine_in_other_thread(message, endpoint):
                 prefix = received_type.loads(raw_received).data
             if received_type.symbol == 'cura.proto.GCodeLayer':
                 data = received_type.loads(raw_received).data
-                print('||' + str(data))
                 gcode_collector.write(data)
             if received_type.symbol == 'cura.proto.SlicingFinished':
                 endpoint['done'] = True
@@ -141,7 +141,7 @@ def run_engine_in_other_thread(message, endpoint):
             traceback.print_exc()
 
 
-def get_message_and_mesh_for_engine(selected_bodies, settings, quality):
+def get_message_and_mesh_for_engine(selected_bodies, settings, quality, extruder_count):
     slice_msg = Slice()
     coords_collector = []
     meshes = []
@@ -153,6 +153,13 @@ def get_message_and_mesh_for_engine(selected_bodies, settings, quality):
         coords = mesh.nodeCoordinatesAsFloat
         coords_collector += [coords[mi * 3 + pi] * 10 for (mi, pi) in itertools.product(mesh.nodeIndices, [0, 1, 2])]
     slice_msg.global_settings = settings
+    extruders = []
+    for i in range(extruder_count):
+        extruder = Extruder()
+        extruder.id = i
+        extruder.settings = dict_to_setting_list(read_extruder_config(i))
+        extruders.append(extruder)
+    slice_msg.extruders = extruders
     object_list = ObjectList()
     obj = Object()
     obj.id = 1
@@ -210,6 +217,12 @@ class SliceCommand(Fusion360CommandBase):
             self.engine_event.remove(self.engine_endpoint['handler'])
 
     def on_preview(self, command: Command, inputs: CommandInputs, args, input_values):
+        stack = [self.global_settings_defaults, self.changed_machine_settings, self.changed_settings]
+        max_x = find_setting_in_stack('machine_width', stack) / 10
+        max_y = find_setting_in_stack('machine_depth', stack) / 10
+        max_z = find_setting_in_stack('machine_height', stack) / 10
+        center_is_zero = find_setting_in_stack('machine_center_is_zero', stack)
+        display_machine(self.graphics, max_x, max_y, max_z, center_is_zero)
         stacked_dict = {**self.global_settings_defaults, **self.changed_machine_settings, **self.changed_settings}
         interpolated_end_gcode = Formatter().vformat(stacked_dict['machine_end_gcode'], [], kwargs=stacked_dict)
         f = GCodeFormatter()
@@ -227,7 +240,6 @@ class SliceCommand(Fusion360CommandBase):
                 slider.valueTwo = slider.maximumValue
                 slider.isEnabled = True
                 linework_group = self.graphics.addGroup()
-                stack = [self.global_settings_defaults, self.changed_machine_settings, self.changed_settings]
                 if not find_setting_in_stack('machine_center_is_zero', stack):
                     transform = linework_group.transform
                     transform.translation = Vector3D.create(-find_setting_in_stack('machine_width', stack) / 20,
@@ -258,10 +270,13 @@ class SliceCommand(Fusion360CommandBase):
                 self.info_box.text = 'preview visible'
             return
         self.running_settings = settings
+        print('setting', settings)
         self.running_models = bodies
         for body in bodies:
             body.isVisible = False
-        (slice_msg, meshes) = get_message_and_mesh_for_engine(bodies, dict_to_setting_list(settings), 15)
+        extruder_count = find_setting_in_stack('machine_extruder_count', stack)
+        (slice_msg, meshes) = get_message_and_mesh_for_engine(bodies, dict_to_setting_list(settings), 15,
+                                                              extruder_count)
 
         for mesh in meshes:
             self.graphics.addMesh(CustomGraphicsCoordinates.create(mesh.nodeCoordinatesAsDouble), mesh.nodeIndices, [],
@@ -365,6 +380,7 @@ class SliceCommand(Fusion360CommandBase):
         selection_input = tab_child.addSelectionInput('selection', 'Body', 'Select the body to slice')
         selection_input.addSelectionFilter('Bodies')
         selection_input.setSelectionLimits(1, 0)
+        # noinspection PyArgumentList
         for attr in AppObjects().design.findAttributes('FusedCura', 'selected_for_printing'):
             if attr.value == 'True':
                 selection_input.addSelection(attr.parent)

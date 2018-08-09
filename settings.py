@@ -1,6 +1,8 @@
+import json
 import os
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from configparser import ConfigParser
+from pathlib import Path
 
 from adsk.core import DropDownStyles, ValueInput
 from .lib.appdirs import user_config_dir
@@ -86,16 +88,24 @@ def save_extruder_config(index, changed_settings, setting_definitions):
         config.write(configfile)
 
 
-def read_extruder_config(index, global_settings_definitions, global_settings_defaults):
+def read_extruder_config(index, global_settings_definitions=None, global_settings_defaults=None):
+    if global_settings_definitions is None:
+        global_settings_definitions = setting_tree_to_dict_and_default(get_config(fdmextruderfile, useless_settings))[0]
     extruder_settings = {}
     try:
+        print('***global_settings_definitions', global_settings_definitions)
+        print('***setting_types', setting_types)
         extruder_settings_parser = ConfigParser(interpolation=None, comment_prefixes=())
         with open(get_extruder_file_path(index)) as f:
             extruder_settings_parser.read_file(f)
         extruder_settings_parser = extruder_settings_parser['extruder']
         for (k, s) in extruder_settings_parser.items():
             value = setting_types[global_settings_definitions[k]['type']].from_str(s)
-            collect_changed_setting_if_different_from_parent(k, value, [global_settings_defaults], extruder_settings)
+            if global_settings_defaults is not None:
+                collect_changed_setting_if_different_from_parent(k, value, [global_settings_defaults],
+                                                                 extruder_settings)
+            else:
+                extruder_settings[k] = value
     except OSError:
         pass
     return extruder_settings
@@ -164,6 +174,24 @@ def find_setting_in_stack(key, stack_of_dict):
     for parent_dict in reversed(stack_of_dict):
         if key in parent_dict:
             return parent_dict[key]
+
+
+def get_config(file_name, useless_set=set()):
+    preferred_order = ['resolution', 'shell', 'infill', 'material', 'speed', 'cooling', 'support', 'travel',
+                       'machine_settings', 'experimental', 'platform_adhesion']
+    file_content = Path(file_name).read_text()
+    loaded = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(file_content)['settings']
+    other_keys = [k for k in loaded.keys() if k not in set(preferred_order)]
+    re_ordered_dict = OrderedDict([(k, loaded[k]) for k in preferred_order + other_keys if k in loaded])
+
+    def filter_useless(node):
+        if node.get('children'):
+            filtered_children = OrderedDict(
+                [(k, filter_useless(v)) for k, v in node['children'].items() if k not in useless_set])
+            return {**{k: v for k, v in node.items() if k != 'children'}, 'children': filtered_children}
+        return node
+
+    return OrderedDict([(k, filter_useless(v)) for (k, v) in re_ordered_dict.items()])
 
 
 SettingType = namedtuple('SettingType', ['to_input', 'from_input', 'to_str', 'from_str'])

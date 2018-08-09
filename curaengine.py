@@ -1,13 +1,10 @@
 import array
-import json
 import os
 import socket
 import struct
-from collections import OrderedDict
 from contextlib import closing
 from datetime import datetime
 from os.path import dirname
-from pathlib import Path
 from subprocess import Popen
 
 from .lib.appdirs import user_log_dir
@@ -88,19 +85,3 @@ def parse_segment(segment, height):
         return floats
 
 
-def get_config(file_name, useless_set=set()):
-    preferred_order = ['resolution', 'shell', 'infill', 'material', 'speed', 'cooling', 'support', 'travel',
-                       'machine_settings', 'experimental', 'platform_adhesion']
-    file_content = Path(file_name).read_text()
-    loaded = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(file_content)['settings']
-    other_keys = [k for k in loaded.keys() if k not in set(preferred_order)]
-    re_ordered_dict = OrderedDict([(k, loaded[k]) for k in preferred_order + other_keys if k in loaded])
-
-    def filter_useless(node):
-        if node.get('children'):
-            filtered_children = OrderedDict(
-                [(k, filter_useless(v)) for k, v in node['children'].items() if k not in useless_set])
-            return {**{k: v for k, v in node.items() if k != 'children'}, 'children': filtered_children}
-        return node
-
-    return OrderedDict([(k, filter_useless(v)) for (k, v) in re_ordered_dict.items()])
