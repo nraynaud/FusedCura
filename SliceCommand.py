@@ -19,7 +19,7 @@ from .curaengine import run_engine, parse_segment, get_config
 from .messages import Slice, dict_to_setting_list, ObjectList, Object, LineType
 from .settings import setting_types, collect_changed_setting_if_different_from_parent, \
     setting_tree_to_dict_and_default, useless_settings, \
-    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration
+    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile
 from .util import event, recursive_inputs
 
 # https://gist.github.com/mRB0/740c25fdae3dc0b0ee7a
@@ -222,6 +222,7 @@ class SliceCommand(Fusion360CommandBase):
                 layer_keys = self.engine_endpoint['layers'].keys()
                 slider.minimumValue = min(layer_keys)
                 slider.maximumValue = max(layer_keys)
+                slider.valueTwo = slider.maximumValue
                 slider.isEnabled = True
                 linework_group = self.graphics.addGroup()
                 stack = [self.global_settings_defaults, self.changed_machine_settings, self.changed_settings]
@@ -236,7 +237,7 @@ class SliceCommand(Fusion360CommandBase):
                     self.graphics.addMesh(CustomGraphicsCoordinates.create(mesh.nodeCoordinatesAsDouble),
                                           mesh.nodeIndices, [], []).setOpacity(0.2, True)
                 layers = self.engine_endpoint['precomputed_layers']
-                layer_range = {0, 1, 2, 3} if not slider.isEnabled else set(range(slider.valueOne, slider.valueTwo))
+                layer_range = set(range(slider.valueOne, slider.valueTwo))
                 line_types = {v.value for v in LineType if
                               v in self.layer_type_inputs and self.layer_type_inputs[v].value}
                 compute_layers_preview(self.engine_endpoint)
@@ -387,7 +388,7 @@ class SliceCommand(Fusion360CommandBase):
             table.addCommandInput(v, (k.value - 1) // 3, ((k.value - 1) % 3) * 2)
 
         tab_settings.isEnabled = False
-        settings = get_config(configuration, useless_settings)
+        settings = get_config(fdmprinterfile, useless_settings)
 
         (self.global_settings_definitions, self.global_settings_defaults) = setting_tree_to_dict_and_default(settings)
         self.changed_machine_settings = read_machine_settings(self.global_settings_definitions,

@@ -5,7 +5,8 @@ from configparser import ConfigParser
 from adsk.core import DropDownStyles, ValueInput
 from .lib.appdirs import user_config_dir
 
-fdmprintfile = os.path.join(os.path.dirname(__file__), 'fdmprinter.def.json')
+fdmprinterfile = os.path.join(os.path.dirname(__file__), 'fdmprinter.def.json')
+fdmextruderfile = os.path.join(os.path.dirname(__file__), 'fdmextruder.def.json')
 
 useless_settings = {'machine_steps_per_mm_x', 'machine_steps_per_mm_y', 'machine_steps_per_mm_z',
                     'machine_steps_per_mm_e', 'machine_endstop_positive_direction_x',
@@ -16,6 +17,14 @@ config_dir = user_config_dir('FusedCura', 'nraynaud')
 machine_preference_file_path = os.path.join(config_dir, 'machine.ini')
 visibility_preference_file_path = os.path.join(config_dir, 'visibility.ini')
 general_configuration_file_path = os.path.join(config_dir, 'fusedcura.ini')
+print('config_dir', config_dir)
+print('machine_preference_file_path', machine_preference_file_path)
+print('visibility_preference_file_path', visibility_preference_file_path)
+print('general_configuration_file_path', general_configuration_file_path)
+
+
+def get_extruder_file_path(index):
+    return os.path.join(config_dir, 'extuder%s.ini' % index)
 
 
 def setting_tree_to_dict_and_default(settings):
@@ -34,6 +43,16 @@ def setting_tree_to_dict_and_default(settings):
     return setting_dict, defaults
 
 
+def remove_categories(settings):
+    result = []
+    for k, v in settings.items():
+        if v['type'] != 'category':
+            result.append((k, v))
+        else:
+            result.extend(remove_categories(v['children']))
+    return result
+
+
 def save_machine_config(changed_settings, setting_definitions):
     config = ConfigParser()
     config['machine'] = {k: setting_types[setting_definitions[k]['type']].to_str(v) for (k, v) in
@@ -45,8 +64,8 @@ def save_machine_config(changed_settings, setting_definitions):
 
 def read_machine_settings(global_settings_definitions, global_settings_defaults):
     machine_settings = {}
-    machine_config_parser = ConfigParser(interpolation=None, comment_prefixes=())
     try:
+        machine_config_parser = ConfigParser(interpolation=None, comment_prefixes=())
         with open(machine_preference_file_path) as f:
             machine_config_parser.read_file(f)
         machine_config_parser = machine_config_parser['machine']
@@ -56,6 +75,30 @@ def read_machine_settings(global_settings_definitions, global_settings_defaults)
     except OSError:
         pass
     return machine_settings
+
+
+def save_extruder_config(index, changed_settings, setting_definitions):
+    config = ConfigParser()
+    config['extruder'] = {k: setting_types[setting_definitions[k]['type']].to_str(v) for (k, v) in
+                          changed_settings.items()}
+    os.makedirs(config_dir, exist_ok=True)
+    with open(get_extruder_file_path(index), 'w') as configfile:
+        config.write(configfile)
+
+
+def read_extruder_config(index, global_settings_definitions, global_settings_defaults):
+    extruder_settings = {}
+    try:
+        extruder_settings_parser = ConfigParser(interpolation=None, comment_prefixes=())
+        with open(get_extruder_file_path(index)) as f:
+            extruder_settings_parser.read_file(f)
+        extruder_settings_parser = extruder_settings_parser['extruder']
+        for (k, s) in extruder_settings_parser.items():
+            value = setting_types[global_settings_definitions[k]['type']].from_str(s)
+            collect_changed_setting_if_different_from_parent(k, value, [global_settings_defaults], extruder_settings)
+    except OSError:
+        pass
+    return extruder_settings
 
 
 def save_visibility(visibilities):
@@ -91,7 +134,6 @@ def read_configuration():
     try:
         with open(general_configuration_file_path) as f:
             configuration.read_file(f)
-        configuration['configuration']['fdmprinterfile'] = fdmprintfile
         return configuration['configuration']
     except OSError:
         pass
