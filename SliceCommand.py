@@ -304,7 +304,7 @@ class SliceCommand(Fusion360CommandBase):
         if self.file_input.id == changed_input.id:
             dialog = AppObjects().ui.createFileDialog()
             dialog.title = 'Save GCode file'
-            dialog.filter = 'GCode files (*.nc)'
+            dialog.filter = 'GCode files (*.gcode)'
             dialog.initialFilename = 'out'
             accessible = dialog.showSave()
             if accessible == DialogResults.DialogOK:
