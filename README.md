@@ -5,6 +5,11 @@ An integration of Fusion 360 with Cura Engine allows direct slicing in your mode
 It is a first stab at the problem.
 ![screen grab](doc/screengrab.png)
 
+## How it works
+This is mostly a tool to manage slicing parameters. Machine and Extruder configuration are saved in a file on disk, 
+while the model parameters are saved as [attributes](https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-BAF017FE-10B8-4612-BDE2-0EF5D4C6F800) in the model.
+
+
 ## What works
     - single printer
     - all slicing parameters
@@ -29,12 +34,11 @@ The last step is to connect the dots in Fusion 360 by the SLICE->"FusedCura Conf
  
 
 ## TODO:
-    - muti extruder
     - per model settings
     - meshes (ironically)
     - direct connection to the printer's web interface
     
 ## Written by 
-Nicolas Raynaud
+Nicolas Raynaud,
 
-Software contractor for hire
+Software contractor for hire.
