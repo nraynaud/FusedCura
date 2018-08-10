@@ -346,6 +346,10 @@ class SliceCommand(Fusion360CommandBase):
     def on_execute(self, command: Command, inputs: CommandInputs, args, input_values):
         attributes = AppObjects().app.activeDocument.attributes
         attributes.add('FusedCura', 'settings', json.dumps(self.changed_settings))
+        # noinspection PyArgumentList
+        for attr in AppObjects().design.findAttributes('FusedCura', 'selected_for_printing'):
+            if attr.value == 'True' and attr.parent not in input_values['selection']:
+                attr.deleteMe()
         for entity in input_values['selection']:
             entity.attributes.add('FusedCura', 'selected_for_printing', 'True')
         if self.gcode_file is not None and self.engine_endpoint and self.engine_endpoint['done']:
