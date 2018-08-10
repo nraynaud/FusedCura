@@ -10,9 +10,9 @@ from copy import deepcopy
 from string import Formatter
 from time import time
 
-from adsk.core import Command, Color, Vector3D, CommandInputs, DialogResults, CustomEventArgs, CustomEventHandler, \
+from adsk.core import Command, Vector3D, CommandInputs, DialogResults, CustomEventArgs, CustomEventHandler, \
     TableCommandInput, Line3D, Point3D
-from adsk.fusion import BRepBody, CustomGraphicsCoordinates, CustomGraphicsSolidColorEffect, TemporaryBRepManager
+from adsk.fusion import BRepBody, CustomGraphicsCoordinates, TemporaryBRepManager
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
 from .curaengine import run_engine, parse_segment
@@ -21,45 +21,14 @@ from .settings import setting_types, collect_changed_setting_if_different_from_p
     setting_tree_to_dict_and_default, useless_settings, \
     find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile, \
     read_extruder_config, get_config
-from .util import event, recursive_inputs, display_machine
+from .util import event, recursive_inputs, display_machine, color_list, create_visibility_checkboxes
 
 # https://gist.github.com/mRB0/740c25fdae3dc0b0ee7a
 
-solid_red = CustomGraphicsSolidColorEffect.create(Color.create(255, 0, 0, 255))
-solid_green = CustomGraphicsSolidColorEffect.create(Color.create(0, 255, 0, 255))
-solid_blue = CustomGraphicsSolidColorEffect.create(Color.create(0, 0, 255, 255))
-solid_yellow = CustomGraphicsSolidColorEffect.create(Color.create(255, 255, 0, 255))
-solid_black = CustomGraphicsSolidColorEffect.create(Color.create(0, 0, 0, 255))
-solid_aqua = CustomGraphicsSolidColorEffect.create(Color.create(0, 255, 255, 255))
-solid_teal = CustomGraphicsSolidColorEffect.create(Color.create(0, 128, 128, 255))
-solid_fuchsia = CustomGraphicsSolidColorEffect.create(Color.create(255, 0, 255, 255))
-solid_olive = CustomGraphicsSolidColorEffect.create(Color.create(128, 128, 0, 255))
-solid_maroon = CustomGraphicsSolidColorEffect.create(Color.create(128, 0, 0, 255))
-
-color_list = [solid_red, solid_green, solid_blue, solid_yellow, solid_black, solid_aqua, solid_teal, solid_fuchsia,
-              solid_olive, solid_olive]
 
 ao = AppObjects()
 
 engine_event_id = 'ENGINE_CUSTOM_EVENT'
-
-
-def _create_visibility_checkboxes(defaut_visible_settings, node, inputs, depth):
-    for (k, val) in node.items():
-        visible = k in defaut_visible_settings
-        id = k + '_vis'
-        if val.get('children'):
-            group_input = inputs.addGroupCommandInput(k + '_vis_group', (' ' * depth) + val['label'])
-            ndepth = depth + 1
-            if val['type'] != 'category':
-                new_input = group_input.children.addBoolValueInput(id, ('-' * ndepth) + val['label'], True, '', visible)
-                new_input.tooltipDescription = val['description']
-                new_input.tooltip = k
-            _create_visibility_checkboxes(defaut_visible_settings, val['children'], group_input.children, ndepth)
-        else:
-            new_input = inputs.addBoolValueInput(id, ('-' * depth) + val['label'], True, '', visible)
-            new_input.tooltipDescription = val['description']
-            new_input.tooltip = k
 
 
 class CancelException(Exception):
@@ -85,7 +54,7 @@ def run_engine_in_other_thread(message, endpoint):
                 fire_if_not_canceled(received_type.symbol)
                 previous_time = new_time
             handle_cancel()
-
+            print(received_type.symbol)
             if received_type.symbol == 'cura.proto.PrintTimeMaterialEstimates':
                 endpoint['estimates'] = received_type.loads(raw_received)
                 complete_gcode = tempfile.NamedTemporaryFile()
@@ -105,22 +74,19 @@ def run_engine_in_other_thread(message, endpoint):
             if received_type.symbol == 'cura.proto.LayerOptimized':
                 line_strips_per_type = defaultdict(list)
                 layer = received_type.loads(raw_received)
-                points_per_type = defaultdict(set)
                 for segment in layer.path_segment:
                     coord_iterator = iter(parse_segment(segment, layer.height))
                     current_list = []
                     current_type = None
                     for type, point_x in zip(segment.line_type, coord_iterator):
                         point = point_x / 10, next(coord_iterator) / 10, next(coord_iterator) / 10
-                        points_per_type[type].add(point)
                         if len(current_list):
                             current_list.extend(point)
                         if type != current_type:
-                            if len(current_list):
-                                line_strips_per_type[current_type].append(current_list)
                             current_list = []
                             current_list.extend(point)
                             current_type = type
+                            line_strips_per_type[current_type].append(current_list)
                 endpoint['layers'][layer.id] = {'height': layer.height, 'thickness': layer.thickness, 'by_type': {}}
                 for type, strips in line_strips_per_type.items():
                     endpoint['layers'][layer.id]['by_type'][type] = {
@@ -431,4 +397,4 @@ class SliceCommand(Fusion360CommandBase):
 
         recursive_inputs(settings, tab_settings.children, type_creator)
         print('unknown config types:', unknown_types)
-        _create_visibility_checkboxes(self.visibilities, settings, tab_setting_vis.children, 0)
+        create_visibility_checkboxes(self.visibilities, settings, tab_setting_vis.children, 0)

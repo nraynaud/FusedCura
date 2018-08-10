@@ -1,9 +1,24 @@
 import sys
 import traceback
 
-from adsk.core import MessageBoxIconTypes, MessageBoxButtonTypes
-from adsk.fusion import CustomGraphicsCoordinates, CustomGraphicsAppearanceColorEffect, CustomGraphicsPointTypes
+from adsk.core import MessageBoxIconTypes, MessageBoxButtonTypes, Color
+from adsk.fusion import CustomGraphicsCoordinates, CustomGraphicsAppearanceColorEffect, CustomGraphicsPointTypes, \
+    CustomGraphicsSolidColorEffect
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
+
+solid_red = CustomGraphicsSolidColorEffect.create(Color.create(255, 0, 0, 255))
+solid_green = CustomGraphicsSolidColorEffect.create(Color.create(0, 255, 0, 255))
+solid_blue = CustomGraphicsSolidColorEffect.create(Color.create(0, 0, 255, 255))
+solid_yellow = CustomGraphicsSolidColorEffect.create(Color.create(255, 255, 0, 255))
+solid_black = CustomGraphicsSolidColorEffect.create(Color.create(0, 0, 0, 255))
+solid_aqua = CustomGraphicsSolidColorEffect.create(Color.create(0, 255, 255, 255))
+solid_teal = CustomGraphicsSolidColorEffect.create(Color.create(0, 128, 128, 255))
+solid_fuchsia = CustomGraphicsSolidColorEffect.create(Color.create(255, 0, 255, 255))
+solid_olive = CustomGraphicsSolidColorEffect.create(Color.create(128, 128, 0, 255))
+solid_maroon = CustomGraphicsSolidColorEffect.create(Color.create(128, 0, 0, 255))
+
+color_list = [solid_red, solid_green, solid_blue, solid_yellow, solid_black, solid_aqua, solid_teal, solid_fuchsia,
+              solid_olive, solid_olive]
 
 handlers = []
 
@@ -92,3 +107,21 @@ def display_machine(graphics, max_x, max_y, max_z, center_is_zero):
     origin = graphics.addPointSet(CustomGraphicsCoordinates.create([0, 0, 0]), [0],
                                   CustomGraphicsPointTypes.UserDefinedCustomGraphicsPointType, 'origin/16x16.png')
     origin.depthPriority = 1
+
+
+def create_visibility_checkboxes(defaut_visible_settings, node, inputs, depth):
+    for (k, val) in node.items():
+        visible = k in defaut_visible_settings
+        id = k + '_vis'
+        if val.get('children'):
+            group_input = inputs.addGroupCommandInput(k + '_vis_group', (' ' * depth) + val['label'])
+            ndepth = depth + 1
+            if val['type'] != 'category':
+                new_input = group_input.children.addBoolValueInput(id, ('-' * ndepth) + val['label'], True, '', visible)
+                new_input.tooltipDescription = val['description']
+                new_input.tooltip = k
+            create_visibility_checkboxes(defaut_visible_settings, val['children'], group_input.children, ndepth)
+        else:
+            new_input = inputs.addBoolValueInput(id, ('-' * depth) + val['label'], True, '', visible)
+            new_input.tooltipDescription = val['description']
+            new_input.tooltip = k
