@@ -9,7 +9,7 @@ from subprocess import Popen
 
 from .lib.appdirs import user_log_dir
 from .messages import hash_message_dict, symbol_message_dict, Slice
-from .settings import read_configuration
+from .settings import read_configuration, fdmprinterfile
 
 # _exec_file = '/Applications/Ultimaker Cura.app/Contents/MacOS/CuraEngine'
 # _settings_file = '/Applications/Ultimaker Cura.app/Contents/MacOS/resources/definitions/fdmprinter.def.json'
@@ -33,7 +33,7 @@ def run_engine(slice_message: Slice, event_handler, keep_alive_handler=None):
             server_socket.listen(5)
             name = server_socket.getsockname()
             child_process = Popen(
-                [config['curaengine'], 'connect', "%s:%s" % name, '-j', config['fdmprinterfile']],
+                [config['curaengine'], 'connect', "%s:%s" % name, '-j', fdmprinterfile],
                 stdout=log_file, stderr=log_file)
             try:
                 print(child_process, file=log_file, flush=True)
