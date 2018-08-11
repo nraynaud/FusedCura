@@ -21,7 +21,7 @@ from .settings import setting_types, collect_changed_setting_if_different_from_p
     setting_tree_to_dict_and_default, useless_settings, \
     find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile, \
     read_extruder_config, get_config
-from .util import event, recursive_inputs, display_machine, color_list, create_visibility_checkboxes
+from .util import event, recursive_inputs, display_machine, create_visibility_checkboxes
 
 # https://gist.github.com/mRB0/740c25fdae3dc0b0ee7a
 
@@ -148,31 +148,26 @@ class GCodeFormatter(Formatter):
         self.prepend_dict['material_bed_temp_prepend'] = not (bed_temp_set & used_args)
 
 
-def compute_layer_preview(layer, layer_id, precomputed_layers):
-    for type, data in layer['by_type'].items():
-        if type not in precomputed_layers[layer_id]:
-            index = 0
-            lines = []
-            for strip_len in data['strip_lengths']:
-                current_poly = data['giant_strip'][index * 3:(index + strip_len) * 3]
-                index += strip_len
-                iterator = iter(current_poly)
-                points = [(x, next(iterator), next(iterator)) for x in iterator]
-                previous_point = None
-                for point in points:
-                    new_point = Point3D.create(*point)
-                    if previous_point:
-                        lines.append(Line3D.create(previous_point, new_point))
-                    previous_point = new_point
-            precomputed_layers[layer_id][type] = lines
-
-
-def compute_layers_preview(engine_endpoint):
-    layers = engine_endpoint['layers']
-    precomputed_layers = engine_endpoint['precomputed_layers']
-    for id, layer in layers.items():
-        if id not in precomputed_layers:
-            compute_layer_preview(layer, id, precomputed_layers)
+def compute_layer_type_preview(layer, layer_id, type, precomputed_layers):
+    manager = TemporaryBRepManager.get()
+    data = layer['by_type'][type]
+    if type not in precomputed_layers[layer_id]:
+        index = 0
+        bodies = []
+        lines = []
+        for strip_len in data['strip_lengths']:
+            current_poly = data['giant_strip'][index * 3:(index + strip_len) * 3]
+            index += strip_len
+            iterator = iter(current_poly)
+            points = [Point3D.create(x, next(iterator), next(iterator)) for x in iterator]
+            previous_point = None
+            for point in points:
+                if previous_point:
+                    lines.append(Line3D.create(previous_point, point))
+                previous_point = point
+        if len(lines):
+            bodies.append(manager.createWireFromCurves(lines, True)[0])
+        precomputed_layers[layer_id][type] = bodies
 
 
 class SliceCommand(Fusion360CommandBase):
@@ -203,8 +198,6 @@ class SliceCommand(Fusion360CommandBase):
                 layer_keys = self.engine_endpoint['layers'].keys()
                 slider.minimumValue = min(layer_keys)
                 slider.maximumValue = max(layer_keys)
-                slider.valueTwo = slider.maximumValue
-                slider.isEnabled = True
                 linework_group = self.graphics.addGroup()
                 if not find_setting_in_stack('machine_center_is_zero', stack):
                     transform = linework_group.transform
@@ -216,21 +209,18 @@ class SliceCommand(Fusion360CommandBase):
                 for mesh in self.engine_endpoint['mesh']:
                     self.graphics.addMesh(CustomGraphicsCoordinates.create(mesh.nodeCoordinatesAsDouble),
                                           mesh.nodeIndices, [], []).setOpacity(0.2, True)
-                layers = self.engine_endpoint['precomputed_layers']
+                cached_layers = self.engine_endpoint['precomputed_layers']
                 layer_range = set(range(slider.valueOne, slider.valueTwo))
                 line_types = {v.value for v in LineType if
                               v in self.layer_type_inputs and self.layer_type_inputs[v].value}
-                compute_layers_preview(self.engine_endpoint)
-                for id in layer_range.intersection(layers.keys()):
-                    layer = layers[id]
-                    for type in line_types.intersection(layer.keys()):
-                        lines = layer[type]
-                        if len(lines):
-                            brepBody, edges = TemporaryBRepManager.get().createWireFromCurves(lines, True)
-                            new_line = linework_group.addBRepBody(brepBody)
-                            new_line.color = color_list[type % len(color_list)]
+                for id in layer_range.intersection(self.engine_endpoint['layers'].keys()):
+                    cached_layer = cached_layers[id]
+                    original_layer = self.engine_endpoint['layers'][id]
+                    for type in line_types.intersection(original_layer['by_type'].keys()):
+                        compute_layer_type_preview(original_layer, id, type, cached_layers)
+                        for body in cached_layer[type]:
+                            new_line = linework_group.addBRepBody(body)
                             new_line.depthPriority = 2
-                            new_line.weight = 2
 
                 AppObjects().app.activeViewport.refresh()
                 self.info_box.text = 'preview visible'
@@ -253,18 +243,11 @@ class SliceCommand(Fusion360CommandBase):
             if len(layer_keys):
                 slider.minimumValue = min(layer_keys)
                 slider.maximumValue = max(layer_keys)
-                slider.isEnabled = True
-            else:
-                slider.isEnabled = False
             if args.additionalInfo == 'done':
                 self.cancel_engine()
                 command.doExecutePreview()
             if args.additionalInfo == 'exception':
                 AppObjects().ui.messageBox(repr(endpoint['exception']))
-            if args.additionalInfo.startswith('layer|'):
-                layer_id = int(args.additionalInfo[len('layer|'):])
-                compute_layer_preview(self.engine_endpoint['layers'][layer_id], layer_id,
-                                      self.engine_endpoint['precomputed_layers'])
 
         handler = event(CustomEventHandler, on_engine)
         endpoint = dict(handler=handler, canceled=False, done=False, estimates={}, layers={}, gcode_file=None,
@@ -359,13 +342,12 @@ class SliceCommand(Fusion360CommandBase):
         self.file_input.tooltip = 'Click to change file'
         self.info_box = tab_child.addTextBoxCommandInput('info_box', 'string', 'info', 1, True)
         self.info_box.isFullWidth = True
-        self.layer_slider = tab_child.addIntegerSliderCommandInput('layer_slider', 'Layers', 0, 2, True)
-        self.layer_slider.isEnabled = False
+        self.layer_slider = tab_child.addIntegerSliderCommandInput('layer_slider', 'Layers', 0, 20, True)
         self.layer_slider.valueOne = 0
-        self.layer_slider.valueTwo = 1
+        self.layer_slider.valueTwo = 10
         table = TableCommandInput.cast(tab_child.addTableCommandInput('lt_table', 'table', 6, '1:7:1:7:1:7'))
         table.isFullWidth = True
-        default_linetypes = {LineType.SkirtType, LineType.Inset0Type}
+        default_linetypes = {LineType.Inset0Type}
         self.layer_type_inputs = {
             t: tab_child.addBoolValueInput('lt_' + t.name, t.name, True, '', t in default_linetypes) for t in LineType
             if t is not LineType.NoneType}
