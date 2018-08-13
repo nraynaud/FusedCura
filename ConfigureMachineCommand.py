@@ -1,4 +1,4 @@
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, Mapping
 from itertools import zip_longest
 from uuid import uuid4
 
@@ -53,6 +53,23 @@ class ConfigureMachineCommand(Fusion360CommandBase):
                 value = node_type.from_input(changed_input, node)
             collect_changed_setting_if_different_from_parent(setting_key, value, [self.global_settings_defaults],
                                                              self.changed_machine_settings)
+
+            def get_transitive_dependants(key):
+                direct = self.global_settings_definitions[key]['dependants']
+                indirects = {v for sub_key in direct for v in get_transitive_dependants(sub_key)}
+                return {*direct, *indirects}
+
+            def input_value(k):
+                node = self.global_settings_definitions[k]
+                return setting_types[node['type']].from_input(self.machine_inputs[k], node)
+
+            dependants = get_transitive_dependants(setting_key)
+            changes = {k: (input_value(k), find_setting_in_stack(k, self.settings_stack)) for k in dependants if
+                       k in self.machine_inputs}
+            for k, v in changes.items():
+                if v[0] != v[1] and k not in self.changed_machine_settings:
+                    node = self.global_settings_definitions[k]
+                    setting_types[node['type']].set_value(self.machine_inputs[k], v[1], node)
         if setting_key == 'machine_extruder_count':
             self.update_rows()
 
@@ -66,8 +83,45 @@ class ConfigureMachineCommand(Fusion360CommandBase):
         (self.global_settings_definitions, self.global_settings_defaults) = setting_tree_to_dict_and_default(settings)
         self.changed_machine_settings = read_machine_settings(self.global_settings_definitions,
                                                               self.global_settings_defaults)
+        self.extruder_settings = get_config(fdmextruderfile, useless_settings)
+        (self.extruder_settings_definitions, self.extruder_settings_defaults) = setting_tree_to_dict_and_default(
+            self.extruder_settings)
+        self.changed_extruder_settings = defaultdict(dict)
         self.machine_inputs = dict()
-        self.settings_stack = [self.global_settings_defaults, self.changed_machine_settings]
+        computed_properties = {k: v for k, v in self.global_settings_definitions.items() if 'value' in v}
+
+        class CustomDict(dict):
+
+            def __getitem__(_, k):
+                return find_setting_in_stack(k, self.settings_stack)
+
+        locals_vars = CustomDict()
+        extra_functions = {
+            'resolveOrValue': lambda x: locals_vars[x],
+            # TODO: implement
+            'extruderValue': lambda i, var: locals_vars[var],
+            'extruderValues': lambda var: [locals_vars[var]],
+            'defaultExtruderPosition': lambda: 0
+        }
+
+        class ComputedDict(Mapping):
+
+            def __getitem__(_, k):
+                node = computed_properties[k]
+                code = node['compiled']
+                import math
+                return eval(code, {**globals(), **extra_functions, 'math': math}, locals_vars)
+
+            def __iter__(self):
+                return computed_properties.__iter__()
+
+            def __len__(self):
+                return len(computed_properties)
+
+        self.computed_values = ComputedDict()
+        self.settings_stack = [self.global_settings_defaults, self.computed_values, self.changed_machine_settings]
+
+        self.giant_inputs_map = {}
 
         def create_creator(id_suffix, stack):
             def machine_type_creator(k, node, _inputs):
@@ -107,16 +161,11 @@ class ConfigureMachineCommand(Fusion360CommandBase):
         end_gcode_input = end_gcode_tab.children.addTextBoxCommandInput('machine_end_gcode_machine', 'End GCode',
                                                                         end_gcode_initial_value, 20, False)
         end_gcode_input.isFullWidth = True
-        self.extruder_settings = get_config(fdmextruderfile, useless_settings)
-        (self.extruder_settings_definitions, self.extruder_settings_defaults) = setting_tree_to_dict_and_default(
-            self.extruder_settings)
         extruder_count = find_setting_in_stack('machine_extruder_count', self.settings_stack)
-        self.changed_extruder_settings = defaultdict(dict)
         for index in range(extruder_count):
             extruder_conf = read_extruder_config(index, self.extruder_settings_definitions,
                                                  self.extruder_settings_defaults)
             self.changed_extruder_settings[index] = extruder_conf
-        self.extruder_tabs = []
         extruder_tab = inputs.addTabCommandInput('extruder_tab', 'Extruders', '')
         self.extruder_table = extruder_tab.children.addTableCommandInput('table', 'Table', 2, '1')
         self.extruder_inputs = []
@@ -157,7 +206,7 @@ class ConfigureMachineCommand(Fusion360CommandBase):
             table.addCommandInput(create_label('======='), next_table_row, 1)
             extruder_conf = self.changed_extruder_settings[index]
             extruder_conf['extruder_nr'] = index
-            stack = [*self.settings_stack, extruder_conf]
+            stack = [*self.settings_stack, self.extruder_settings_defaults, extruder_conf]
 
             def extruder_type_creator(k, node, _inputs):
                 if node['type'] in setting_types:

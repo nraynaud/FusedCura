@@ -1,6 +1,8 @@
+import ast
+import builtins
 import json
 import os
-from collections import namedtuple, OrderedDict
+from collections import namedtuple, OrderedDict, defaultdict
 from configparser import ConfigParser
 from pathlib import Path
 
@@ -13,7 +15,7 @@ fdmextruderfile = os.path.join(os.path.dirname(__file__), 'fdmextruder.def.json'
 useless_settings = {'machine_steps_per_mm_x', 'machine_steps_per_mm_y', 'machine_steps_per_mm_z',
                     'machine_steps_per_mm_e', 'machine_endstop_positive_direction_x',
                     'machine_endstop_positive_direction_y', 'machine_endstop_positive_direction_z',
-                    'machine_heat_zone_length', 'machine_show_variants'}
+                    'machine_show_variants'}
 
 config_dir = user_config_dir('FusedCura', 'nraynaud')
 machine_preference_file_path = os.path.join(config_dir, 'machine.ini')
@@ -29,6 +31,25 @@ def get_extruder_file_path(index):
     return os.path.join(config_dir, 'extuder%s.ini' % index)
 
 
+_builtin_set = set(dir(builtins))
+
+
+def get_dependencies(tree):
+    dependencies = set()
+
+    class DependencyHarvester(ast.NodeVisitor):
+        def visit_Name(self, node: ast.Name) -> None:
+            if node.id not in _builtin_set:
+                dependencies.add(node.id)
+
+        def visit_Str(self, node: ast.AST) -> None:
+            if node.s not in _builtin_set:
+                dependencies.add(node.s)
+
+    DependencyHarvester().visit(tree)
+    return dependencies
+
+
 def setting_tree_to_dict_and_default(settings):
     def get_settings_dict(node, dictionary):
         for k, val in node.items():
@@ -38,7 +59,19 @@ def setting_tree_to_dict_and_default(settings):
                 get_settings_dict(val['children'], dictionary)
 
     setting_dict = dict()
+    dependant_dict = defaultdict(set)
     get_settings_dict(settings, setting_dict)
+    for k, v in setting_dict.items():
+        v['dependants'] = set()
+        if v.get('value'):
+            tree = ast.parse(v.get('value'), "eval")
+            dependencies = get_dependencies(tree)
+            for dep in dependencies:
+                dependant_dict[dep].add(k)
+            v['compiled'] = compile(v.get('value'), '<string>' + k, 'eval')
+            v['dependencies'] = dependencies
+    for k in setting_dict.keys():
+        setting_dict[k]['dependants'] = dependant_dict[k]
     defaults = {
         k: setting_types[v['type']].from_str(v['default_value']) if setting_types.get(v['type']) and v.get(
             'default_value') else v.get('default_value') for (k, v) in setting_dict.items()}
@@ -93,8 +126,6 @@ def read_extruder_config(index, global_settings_definitions=None, global_setting
         global_settings_definitions = setting_tree_to_dict_and_default(get_config(fdmextruderfile, useless_settings))[0]
     extruder_settings = {}
     try:
-        print('***global_settings_definitions', global_settings_definitions)
-        print('***setting_types', setting_types)
         extruder_settings_parser = ConfigParser(interpolation=None, comment_prefixes=())
         with open(get_extruder_file_path(index)) as f:
             extruder_settings_parser.read_file(f)
@@ -150,14 +181,6 @@ def read_configuration():
     return None
 
 
-def add_enum_input(key, node, _inputs, value):
-    new_input = _inputs.addDropDownCommandInput(key, node['label'], DropDownStyles.TextListDropDownStyle)
-    for (opk, op) in node['options'].items():
-        item = new_input.listItems.add(op, opk == value)
-        item.id = opk
-    return new_input
-
-
 def collect_changed_setting_if_different_from_parent(key, value, stack_of_dict, collection_dict):
     for parent_dict in reversed(stack_of_dict):
         if key in parent_dict:
@@ -174,6 +197,7 @@ def find_setting_in_stack(key, stack_of_dict):
     for parent_dict in reversed(stack_of_dict):
         if key in parent_dict:
             return parent_dict[key]
+    raise KeyError(key)
 
 
 def get_config(file_name, useless_set=set()):
@@ -194,37 +218,56 @@ def get_config(file_name, useless_set=set()):
     return OrderedDict([(k, filter_useless(v)) for (k, v) in re_ordered_dict.items()])
 
 
-SettingType = namedtuple('SettingType', ['to_input', 'from_input', 'to_str', 'from_str'])
+def add_enum_input(key, node, _inputs, value):
+    new_input = _inputs.addDropDownCommandInput(key, node['label'], DropDownStyles.TextListDropDownStyle)
+    for (opk, op) in node['options'].items():
+        item = new_input.listItems.add(op, opk == value)
+        item.id = opk
+    return new_input
+
+
+def set_enum_value(i, v, node):
+    items = [item for item in i.listItems if item.name == node['options'][v]]
+    items[0].isSelected = True
+
+
+def set_normal_value(i, v, node):
+    i.value = v
+
+
+SettingType = namedtuple('SettingType', ['to_input', 'from_input', 'to_str', 'from_str', 'set_value'])
 
 setting_types = {
     'bool': SettingType(
         to_input=lambda k, desc, inp, v: inp.addBoolValueInput(k, desc['label'], True, '', bool(v)),
-        to_str=lambda v: str(v).lower(), from_str=bool, from_input=lambda i, node: i.value),
+        to_str=lambda v: str(v).lower(), from_str=bool, from_input=(lambda i, node: i.value),
+        set_value=set_normal_value),
     'float': SettingType(
         to_input=lambda k, desc, inp, v: inp.addValueInput(k, desc['label'], '',
                                                            ValueInput.createByReal(float(v) if v else 0), ),
-        to_str=str, from_str=float, from_input=lambda i, node: i.value),
+        to_str=str, from_str=float, from_input=lambda i, node: i.value, set_value=set_normal_value),
     'int': SettingType(
         to_input=lambda k, desc, inp, v: inp.addIntegerSpinnerCommandInput(k, desc['label'], 0, 300000, 1,
                                                                            int(v) if v else 0),
-        to_str=str, from_str=int, from_input=lambda i, node: i.value),
+        to_str=str, from_str=int, from_input=lambda i, node: i.value, set_value=set_normal_value),
     'str': SettingType(
         to_input=lambda k, desc, inp, v: inp.addStringValueInput(k, desc['label'], v if v else ''),
-        to_str=lambda v: v, from_str=lambda v: v, from_input=lambda i, node: i.value),
+        to_str=lambda v: v, from_str=lambda v: v, from_input=lambda i, node: i.value, set_value=set_normal_value),
     'enum': SettingType(to_input=add_enum_input, to_str=str, from_str=str,
                         from_input=lambda i, node:
-                        [k for (k, v) in node['options'].items() if v == i.selectedItem.name][0]),
+                        [k for (k, v) in node['options'].items() if v == i.selectedItem.name][0],
+                        set_value=set_enum_value),
     'optional_extruder': SettingType(
         to_input=lambda k, desc, inp, v: inp.addIntegerSpinnerCommandInput(k, desc['label'], -1, 16,
                                                                            1, int(v) if v else 0),
-        to_str=str, from_str=int, from_input=lambda i, node: i.value),
+        to_str=str, from_str=int, from_input=lambda i, node: i.value, set_value=set_normal_value),
     'extruder': SettingType(
         to_input=lambda k, desc, inp, v: inp.addIntegerSpinnerCommandInput(k, desc['label'], 0, 16, 1,
                                                                            int(v) if v else 0),
-        to_str=str, from_str=int, from_input=lambda i, node: i.value),
+        to_str=str, from_str=int, from_input=lambda i, node: i.value, set_value=set_normal_value),
     '[int]': SettingType(
         to_input=lambda k, desc, inp, v: inp.addStringValueInput(k, desc['label'], v if v else ''),
-        to_str=str, from_str=str, from_input=lambda i, node: i.value),
+        to_str=str, from_str=str, from_input=lambda i, node: i.value, set_value=set_normal_value),
 }
 
 defaut_visible_settings = {'layer_height', 'layer_height_0', 'line_width', 'wall_line_width', 'wall_line_width_0',
