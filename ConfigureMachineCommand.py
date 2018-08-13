@@ -138,6 +138,8 @@ class ConfigureMachineCommand(Fusion360CommandBase):
             self.changed_extruder_settings[index] = extruder_conf
         extruder_tab = inputs.addTabCommandInput('extruder_tab', 'Extruders', '')
         self.extruder_table = extruder_tab.children.addTableCommandInput('table', 'Table', 2, '1')
+        self.extruder_table.maximumVisibleRows = 100
+        self.extruder_table.minimumVisibleRows = 10
         self.extruder_inputs = []
         self.update_extuders_rows()
 
