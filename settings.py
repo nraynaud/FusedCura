@@ -2,7 +2,7 @@ import ast
 import builtins
 import json
 import os
-from collections import namedtuple, OrderedDict, defaultdict
+from collections import namedtuple, OrderedDict, defaultdict, Mapping
 from configparser import ConfigParser
 from pathlib import Path
 
@@ -216,6 +216,43 @@ def get_config(file_name, useless_set=set()):
         return node
 
     return OrderedDict([(k, filter_useless(v)) for (k, v) in re_ordered_dict.items()])
+
+
+def stacked_mapping(stack):
+    class CustomDict(dict):
+
+        def __getitem__(self, k):
+            return find_setting_in_stack(k, stack)
+
+    return CustomDict()
+
+
+def computed_dict(definitions, locals_vars):
+    computed_properties = {k: v for k, v in definitions.items() if 'value' in v}
+    extra_functions = {
+        'resolveOrValue': lambda x: locals_vars[x],
+        # TODO: implement
+        'extruderValue': lambda i, var: locals_vars[var],
+        'extruderValues': lambda var: [locals_vars[var]],
+        'defaultExtruderPosition': lambda: 0
+    }
+    import math
+    eval_global = {
+        **globals(), **extra_functions, 'math': math
+    }
+
+    class ComputedDict(Mapping):
+
+        def __getitem__(_, k):
+            return eval(computed_properties[k]['compiled'], eval_global, locals_vars)
+
+        def __iter__(self):
+            return computed_properties.__iter__()
+
+        def __len__(self):
+            return len(computed_properties)
+
+    return ComputedDict()
 
 
 def add_enum_input(key, node, _inputs, value):

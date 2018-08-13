@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import threading
 import traceback
-from collections import defaultdict, Mapping
+from collections import defaultdict
 from copy import deepcopy
 from string import Formatter
 from time import time
@@ -19,8 +19,8 @@ from .curaengine import run_engine, parse_segment
 from .messages import Slice, dict_to_setting_list, ObjectList, Object, LineType, Extruder
 from .settings import setting_types, collect_changed_setting_if_different_from_parent, \
     setting_tree_to_dict_and_default, useless_settings, \
-    find_setting_in_stack, save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile, \
-    read_extruder_config, get_config
+    save_visibility, read_visibility, read_machine_settings, read_configuration, fdmprinterfile, \
+    read_extruder_config, get_config, stacked_mapping, computed_dict
 from .util import event, recursive_inputs, display_machine, create_visibility_checkboxes
 
 # https://gist.github.com/mRB0/740c25fdae3dc0b0ee7a
@@ -178,11 +178,10 @@ class SliceCommand(Fusion360CommandBase):
             self.engine_event.remove(self.engine_endpoint['handler'])
 
     def on_preview(self, command: Command, inputs: CommandInputs, args, input_values):
-        stack = self.settings_stack
-        max_x = find_setting_in_stack('machine_width', stack) / 10
-        max_y = find_setting_in_stack('machine_depth', stack) / 10
-        max_z = find_setting_in_stack('machine_height', stack) / 10
-        center_is_zero = find_setting_in_stack('machine_center_is_zero', stack)
+        max_x = self.stacked_dict['machine_width'] / 10
+        max_y = self.stacked_dict['machine_depth'] / 10
+        max_z = self.stacked_dict['machine_height'] / 10
+        center_is_zero = self.stacked_dict['machine_center_is_zero']
         display_machine(self.graphics, max_x, max_y, max_z, center_is_zero)
         stacked_dict = {**self.global_settings_defaults, **self.computed_values, **self.changed_machine_settings,
                         **self.changed_settings}
@@ -201,10 +200,9 @@ class SliceCommand(Fusion360CommandBase):
                 slider.minimumValue = min(layer_keys)
                 slider.maximumValue = max(layer_keys)
                 linework_group = self.graphics.addGroup()
-                if not find_setting_in_stack('machine_center_is_zero', stack):
+                if not center_is_zero:
                     transform = linework_group.transform
-                    transform.translation = Vector3D.create(-find_setting_in_stack('machine_width', stack) / 20,
-                                                            -find_setting_in_stack('machine_depth', stack) / 20, 0)
+                    transform.translation = Vector3D.create(-max_x / 2, -max_y / 2, 0)
                     linework_group.transform = transform
                 for body in bodies:
                     body.isVisible = False
@@ -232,7 +230,7 @@ class SliceCommand(Fusion360CommandBase):
         self.running_models = bodies
         for body in bodies:
             body.isVisible = False
-        extruder_count = find_setting_in_stack('machine_extruder_count', stack)
+        extruder_count = self.stacked_dict['machine_extruder_count']
         (slice_msg, meshes) = get_message_and_mesh_for_engine(bodies, dict_to_setting_list(settings), 15,
                                                               extruder_count)
 
@@ -298,7 +296,7 @@ class SliceCommand(Fusion360CommandBase):
                     return setting_types[node['type']].from_input(self.input_dict[k], node)
 
                 dependants = get_transitive_dependants(setting_key)
-                changes = {k: (input_value(k), find_setting_in_stack(k, self.settings_stack)) for k in dependants if
+                changes = {k: (input_value(k), self.stacked_dict[k]) for k in dependants if
                            k in self.input_dict}
                 for k, v in changes.items():
                     if v[0] != v[1] and k not in self.changed_machine_settings:
@@ -384,44 +382,16 @@ class SliceCommand(Fusion360CommandBase):
                                                               self.global_settings_defaults)
         unknown_types = set()
         self.input_dict = dict()
-        computed_properties = {k: v for k, v in self.global_settings_definitions.items() if 'value' in v}
-
-        class CustomDict(dict):
-
-            def __getitem__(_, k):
-                return find_setting_in_stack(k, self.settings_stack)
-
-        locals_vars = CustomDict()
-        extra_functions = {
-            'resolveOrValue': lambda x: locals_vars[x],
-            # TODO: implement
-            'extruderValue': lambda i, var: locals_vars[var],
-            'extruderValues': lambda var: [locals_vars[var]],
-            'defaultExtruderPosition': lambda: 0
-        }
-
-        class ComputedDict(Mapping):
-
-            def __getitem__(_, k):
-                node = computed_properties[k]
-                code = node['compiled']
-                import math
-                return eval(code, {**globals(), **extra_functions, 'math': math}, locals_vars)
-
-            def __iter__(self):
-                return computed_properties.__iter__()
-
-            def __len__(self):
-                return len(computed_properties)
-
-        self.computed_values = ComputedDict()
-        self.settings_stack = [self.global_settings_defaults, self.computed_values, self.changed_machine_settings,
-                               self.changed_settings]
+        # this list will have the computed_values inserted below
+        self.settings_stack = [self.global_settings_defaults, self.changed_machine_settings, self.changed_settings]
+        self.stacked_dict = stacked_mapping(self.settings_stack)
+        self.computed_values = computed_dict(self.global_settings_definitions, self.stacked_dict)
+        self.settings_stack.insert(1, self.computed_values)
 
         def type_creator(k, node, inputs):
             creator = setting_types.get(node['type'])
             if creator:
-                value = find_setting_in_stack(k, self.settings_stack)
+                value = self.stacked_dict[k]
                 new_input = creator.to_input(k, node, inputs, value)
                 self.input_dict[k] = new_input
                 new_input.isVisible = self.visibilities.get(k, False)
