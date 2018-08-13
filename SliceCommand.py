@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import threading
 import traceback
-from collections import defaultdict
+from collections import defaultdict, Mapping
 from copy import deepcopy
 from string import Formatter
 from time import time
@@ -178,19 +178,21 @@ class SliceCommand(Fusion360CommandBase):
             self.engine_event.remove(self.engine_endpoint['handler'])
 
     def on_preview(self, command: Command, inputs: CommandInputs, args, input_values):
-        stack = [self.global_settings_defaults, self.changed_machine_settings, self.changed_settings]
+        stack = self.settings_stack
         max_x = find_setting_in_stack('machine_width', stack) / 10
         max_y = find_setting_in_stack('machine_depth', stack) / 10
         max_z = find_setting_in_stack('machine_height', stack) / 10
         center_is_zero = find_setting_in_stack('machine_center_is_zero', stack)
         display_machine(self.graphics, max_x, max_y, max_z, center_is_zero)
-        stacked_dict = {**self.global_settings_defaults, **self.changed_machine_settings, **self.changed_settings}
+        stacked_dict = {**self.global_settings_defaults, **self.computed_values, **self.changed_machine_settings,
+                        **self.changed_settings}
         interpolated_end_gcode = Formatter().vformat(stacked_dict['machine_end_gcode'], [], kwargs=stacked_dict)
         f = GCodeFormatter()
         interpolated_start_gcode = f.vformat(stacked_dict['machine_start_gcode'], [], kwargs=stacked_dict)
         last_minute_swaps = {'machine_start_gcode': interpolated_start_gcode,
                              'machine_end_gcode': interpolated_end_gcode, **f.prepend_dict}
-        settings = deepcopy({**self.changed_machine_settings, **self.changed_settings, **last_minute_swaps})
+        settings = deepcopy({**self.computed_values, **self.changed_machine_settings, **self.changed_settings,
+                             **last_minute_swaps})
         bodies = [BRepBody.cast(b) for b in input_values['selection']]
         slider = self.layer_slider
         if settings == self.running_settings and self.running_models == bodies:
@@ -285,6 +287,23 @@ class SliceCommand(Fusion360CommandBase):
                 collect_changed_setting_if_different_from_parent(setting_key, value, [self.global_settings_defaults,
                                                                                       self.changed_machine_settings],
                                                                  self.changed_settings)
+
+                def get_transitive_dependants(key):
+                    direct = self.global_settings_definitions[key]['dependants']
+                    indirects = {v for sub_key in direct for v in get_transitive_dependants(sub_key)}
+                    return {*direct, *indirects}
+
+                def input_value(k):
+                    node = self.global_settings_definitions[k]
+                    return setting_types[node['type']].from_input(self.input_dict[k], node)
+
+                dependants = get_transitive_dependants(setting_key)
+                changes = {k: (input_value(k), find_setting_in_stack(k, self.settings_stack)) for k in dependants if
+                           k in self.input_dict}
+                for k, v in changes.items():
+                    if v[0] != v[1] and k not in self.changed_machine_settings:
+                        node = self.global_settings_definitions[k]
+                        setting_types[node['type']].set_value(self.input_dict[k], v[1], node)
             if setting_key.endswith('_vis'):
                 vis_key = setting_key[:-len('_vis')]
                 component = self.input_dict.get(vis_key)
@@ -365,11 +384,44 @@ class SliceCommand(Fusion360CommandBase):
                                                               self.global_settings_defaults)
         unknown_types = set()
         self.input_dict = dict()
+        computed_properties = {k: v for k, v in self.global_settings_definitions.items() if 'value' in v}
+
+        class CustomDict(dict):
+
+            def __getitem__(_, k):
+                return find_setting_in_stack(k, self.settings_stack)
+
+        locals_vars = CustomDict()
+        extra_functions = {
+            'resolveOrValue': lambda x: locals_vars[x],
+            # TODO: implement
+            'extruderValue': lambda i, var: locals_vars[var],
+            'extruderValues': lambda var: [locals_vars[var]],
+            'defaultExtruderPosition': lambda: 0
+        }
+
+        class ComputedDict(Mapping):
+
+            def __getitem__(_, k):
+                node = computed_properties[k]
+                code = node['compiled']
+                import math
+                return eval(code, {**globals(), **extra_functions, 'math': math}, locals_vars)
+
+            def __iter__(self):
+                return computed_properties.__iter__()
+
+            def __len__(self):
+                return len(computed_properties)
+
+        self.computed_values = ComputedDict()
+        self.settings_stack = [self.global_settings_defaults, self.computed_values, self.changed_machine_settings,
+                               self.changed_settings]
 
         def type_creator(k, node, inputs):
             creator = setting_types.get(node['type'])
             if creator:
-                value = find_setting_in_stack(k, [self.global_settings_defaults, self.changed_settings])
+                value = find_setting_in_stack(k, self.settings_stack)
                 new_input = creator.to_input(k, node, inputs, value)
                 self.input_dict[k] = new_input
                 new_input.isVisible = self.visibilities.get(k, False)

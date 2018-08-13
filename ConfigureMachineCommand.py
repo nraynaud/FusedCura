@@ -120,7 +120,6 @@ class ConfigureMachineCommand(Fusion360CommandBase):
 
         self.computed_values = ComputedDict()
         self.settings_stack = [self.global_settings_defaults, self.computed_values, self.changed_machine_settings]
-
         self.giant_inputs_map = {}
 
         def create_creator(id_suffix, stack):
