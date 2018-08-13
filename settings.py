@@ -53,6 +53,7 @@ def get_dependencies(tree):
 def setting_tree_to_dict_and_default(settings):
     def get_settings_dict(node, dictionary):
         for k, val in node.items():
+            val['id'] = k
             if val['type'] != 'category':
                 dictionary[k] = val
             if val.get('children'):

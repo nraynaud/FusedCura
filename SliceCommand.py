@@ -9,6 +9,7 @@ from collections import defaultdict
 from copy import deepcopy
 from string import Formatter
 from time import time
+from uuid import uuid4
 
 from adsk.core import Command, Vector3D, CommandInputs, DialogResults, CustomEventArgs, CustomEventHandler, \
     TableCommandInput, Line3D, Point3D
@@ -267,6 +268,26 @@ class SliceCommand(Fusion360CommandBase):
             pass
 
     def on_input_changed(self, command: Command, inputs: CommandInputs, changed_input, input_values):
+        def propagate_changes(setting_key):
+            def get_transitive_dependants(key):
+                direct = self.global_settings_definitions[key]['dependants']
+                indirects = {v for sub_key in direct for v in get_transitive_dependants(sub_key)}
+                return {key, *direct, *indirects}
+
+            def input_value(k):
+                node = self.global_settings_definitions[k]
+                return setting_types[node['type']].from_input(self.input_dict[k], node)
+
+            dependants = get_transitive_dependants(setting_key)
+            changes = {k: (input_value(k), self.stacked_dict[k]) for k in dependants if
+                       k in self.input_dict}
+            print('$$$changes', changes)
+            for k, v in changes.items():
+                if v[0] != v[1] and k not in self.changed_machine_settings:
+                    print('**changing', k, v[0], '->', v[1])
+                    node = self.global_settings_definitions[k]
+                    setting_types[node['type']].set_value(self.input_dict[k], v[1], node)
+
         if self.file_input.id == changed_input.id:
             dialog = AppObjects().ui.createFileDialog()
             dialog.title = 'Save GCode file'
@@ -285,29 +306,26 @@ class SliceCommand(Fusion360CommandBase):
                 collect_changed_setting_if_different_from_parent(setting_key, value, [self.global_settings_defaults,
                                                                                       self.changed_machine_settings],
                                                                  self.changed_settings)
-
-                def get_transitive_dependants(key):
-                    direct = self.global_settings_definitions[key]['dependants']
-                    indirects = {v for sub_key in direct for v in get_transitive_dependants(sub_key)}
-                    return {*direct, *indirects}
-
-                def input_value(k):
-                    node = self.global_settings_definitions[k]
-                    return setting_types[node['type']].from_input(self.input_dict[k], node)
-
-                dependants = get_transitive_dependants(setting_key)
-                changes = {k: (input_value(k), self.stacked_dict[k]) for k in dependants if
-                           k in self.input_dict}
-                for k, v in changes.items():
-                    if v[0] != v[1] and k not in self.changed_machine_settings:
-                        node = self.global_settings_definitions[k]
-                        setting_types[node['type']].set_value(self.input_dict[k], v[1], node)
+                propagate_changes(setting_key)
+                self.update_summary_table()
             if setting_key.endswith('_vis'):
                 vis_key = setting_key[:-len('_vis')]
                 component = self.input_dict.get(vis_key)
                 if component:
                     component.isVisible = changed_input.value
                     self.visibilities[vis_key] = changed_input.value
+            elif setting_key.endswith('_reset'):
+                reset_key = setting_key[:-len('_reset')]
+                if reset_key in self.changed_settings:
+                    del self.changed_settings[reset_key]
+                    propagate_changes(reset_key)
+                    changed_input.isVisible = False
+                    (returnValue, row, column, rowSpan, columnSpan) = self.summary_table.getPosition(changed_input)
+                    for i in range(self.summary_table.numberOfColumns):
+                        command_input = self.summary_table.getInputAtPosition(row, i)
+                        if command_input:
+                            command_input.isVisible = False
+                    command.doExecutePreview()
 
     def on_execute(self, command: Command, inputs: CommandInputs, args, input_values):
         attributes = AppObjects().app.activeDocument.attributes
@@ -337,15 +355,16 @@ class SliceCommand(Fusion360CommandBase):
         self.graphics = AppObjects().root_comp.customGraphicsGroups.add()
         self.visibilities = read_visibility()
         self.gcode_file = None
-
         settings_attribute = AppObjects().app.activeDocument.attributes.itemByName('FusedCura', 'settings')
         if settings_attribute is not None:
             self.changed_settings = json.loads(settings_attribute.value)
-
         tab_models = inputs.addTabCommandInput('tab_models', 'Models', '')
         tab_settings = inputs.addTabCommandInput('tab_settings', 'Settings', '')
         tab_setting_vis = inputs.addTabCommandInput('tab_settings_visibility', 'Visibility', '')
-
+        tab_summary = inputs.addTabCommandInput('tab_summary', 'Summary', '')
+        self.summary_table = tab_summary.children.addTableCommandInput('table_summary', 'Table', 4, '5:2:2:1')
+        self.summary_table.maximumVisibleRows = 100
+        self.summary_table.minimumVisibleRows = 10
         tab_child = CommandInputs.cast(tab_models.children)
         selection_input = tab_child.addSelectionInput('selection', 'Body', 'Select the body to slice')
         selection_input.addSelectionFilter('Bodies')
@@ -356,7 +375,7 @@ class SliceCommand(Fusion360CommandBase):
                 selection_input.addSelection(attr.parent)
         self.file_input = tab_child.addBoolValueInput('selectFile', 'gcode file', False, '', True)
         self.file_input.text = 'click'
-        self.file_input.tooltip = 'Click to change file'
+        self.file_input.tooltip = 'Click to select destination gcode file'
         self.info_box = tab_child.addTextBoxCommandInput('info_box', 'string', 'info', 1, True)
         self.info_box.isFullWidth = True
         self.layer_slider = tab_child.addIntegerSliderCommandInput('layer_slider', 'Layers', 0, 20, True)
@@ -373,10 +392,7 @@ class SliceCommand(Fusion360CommandBase):
             label.isReadOnly = True
             table.addCommandInput(label, (k.value - 1) // 3, ((k.value - 1) % 3) * 2 + 1)
             table.addCommandInput(v, (k.value - 1) // 3, ((k.value - 1) % 3) * 2)
-
-        tab_settings.isEnabled = False
         settings = get_config(fdmprinterfile, useless_settings)
-
         (self.global_settings_definitions, self.global_settings_defaults) = setting_tree_to_dict_and_default(settings)
         self.changed_machine_settings = read_machine_settings(self.global_settings_definitions,
                                                               self.global_settings_defaults)
@@ -402,3 +418,30 @@ class SliceCommand(Fusion360CommandBase):
         recursive_inputs(settings, tab_settings.children, type_creator)
         print('unknown config types:', unknown_types)
         create_visibility_checkboxes(self.visibilities, settings, tab_setting_vis.children, 0)
+        self.update_summary_table()
+
+    def update_summary_table(self):
+        table = self.summary_table
+        while table.rowCount > 0:
+            table.deleteRow(0)
+
+        def create_label(text, tooltip, description):
+            label = table.commandInputs.addStringValueInput('a' + str(uuid4()), '', text)
+            label.isReadOnly = True
+            label.tooltip = tooltip
+            label.tooltipDescription = description
+            return label
+
+        for k, v in self.changed_settings.items():
+            node = self.global_settings_definitions[k]
+            next_table_row = table.rowCount
+            table.addCommandInput(create_label(node['label'], k, node['description']), next_table_row, 0)
+            table.addCommandInput(create_label(str(v), 'Your value', node['description']), next_table_row, 1)
+            if 'value' in node:
+                table.addCommandInput(create_label(str(self.computed_values[k]), 'Calculated value', node['value']),
+                                      next_table_row, 2)
+                button = table.commandInputs.addBoolValueInput(k + '_reset', 'restore', False, '', True)
+                button.text = 'ℹ️'
+                button.tooltip = 'click to restore calculated value'
+                button.rowIndex = next_table_row
+                table.addCommandInput(button, next_table_row, 3)

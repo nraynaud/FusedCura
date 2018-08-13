@@ -146,8 +146,6 @@ class ConfigureMachineCommand(Fusion360CommandBase):
     def update_extuders_rows(self):
         new_extuder_count = self.stacked_dict['machine_extruder_count']
         table = self.extruder_table
-        inputs = table.commandInputs
-        self.table_command_inputs = inputs
         flat_settings = OrderedDict(remove_categories(self.extruder_settings))
         remove_rows = []
         add_rows = []
@@ -168,7 +166,7 @@ class ConfigureMachineCommand(Fusion360CommandBase):
             self.extruder_inputs.append(extruder_inputs)
 
             def create_label(text):
-                new_input = inputs.addStringValueInput('a' + str(uuid4()), '', text)
+                new_input = table.commandInputs.addStringValueInput('a' + str(uuid4()), '', text)
                 new_input.isReadOnly = True
                 return new_input
 
@@ -191,4 +189,4 @@ class ConfigureMachineCommand(Fusion360CommandBase):
                     table.addCommandInput(input, next_table_row, 1)
                     return input
 
-            recursive_inputs(flat_settings, inputs, extruder_type_creator)
+            recursive_inputs(flat_settings, table.commandInputs, extruder_type_creator)
