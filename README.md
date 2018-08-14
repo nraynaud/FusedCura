@@ -18,8 +18,9 @@ while the model parameters are saved as [attributes](https://help.autodesk.com/v
 
 
 ## What works
-    - single printer
-    - all slicing parameters
+    - printer parameters
+    - most slicing parameters
+    - I did actually print some tests with it
 
 ## Install
 To install this Add-In, [download the zip file](https://github.com/nraynaud/FusedCura/archive/master.zip) 
@@ -39,13 +40,16 @@ The last step is to connect the dots in Fusion 360 by the SLICE->"FusedCura Conf
  to teach the location of the curaengine executable. It should be located next to the Cura executable in the installation 
  directory (/Applications/Ultimaker Cura.app/Contents/MacOS/CuraEngine on macos).
  
+## Contact
+You can contact me about this project with the issue tracker.
 
 ## TODO:
+    - recall last used settings
     - per model settings
     - meshes (ironically)
     - direct connection to the printer's web interface
     
 ## Written by 
-Nicolas Raynaud,
+Nicolas Raynaud (nraynaud@gmail.com)
 
-Software contractor for hire.
+Remote software contractor for hire.
