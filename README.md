@@ -5,6 +5,13 @@ An integration of Fusion 360 with Cura Engine allows direct slicing in your mode
 It is a first stab at the problem.
 ![screen grab](doc/screengrab.png)
 
+## Motivation
+The immediate aim is to reduce the iteration time when fiddling with the model and the slicer by having the slicer 
+configuration stored in the model document. It also helps to have the same 3D camera controls for everything and not be 
+fumbling with shift+center button drag or was it alt+right drag?
+
+In the future, depending on traction, I might start to integrate the slicer tighter for things like parameters per face.
+
 ## How it works
 This is mostly a tool to manage slicing parameters. Machine and Extruder configuration are saved in a file on disk, 
 while the model parameters are saved as [attributes](https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-BAF017FE-10B8-4612-BDE2-0EF5D4C6F800) in the model.
