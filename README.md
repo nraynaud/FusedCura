@@ -46,7 +46,6 @@ You can contact me about this project with the issue tracker.
 ## TODO:
     - recall last used settings
     - per model settings
-    - meshes (ironically)
     - direct connection to the printer's web interface
     
 ## Written by 

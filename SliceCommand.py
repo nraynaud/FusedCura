@@ -113,9 +113,13 @@ def get_message_and_mesh_for_engine(selected_bodies, settings, quality, extruder
     coords_collector = []
     meshes = []
     for selected_body in selected_bodies:
-        calculator = selected_body.meshManager.createMeshCalculator()
-        calculator.setQuality(quality)
-        mesh = calculator.calculate()
+        if isinstance(selected_body, BRepBody):
+            calculator = selected_body.meshManager.createMeshCalculator()
+            calculator.setQuality(quality)
+            mesh = calculator.calculate()
+        else:
+            # isinstance(selected_body, MeshBody):
+            mesh = selected_body.displayMesh
         meshes.append(mesh)
         coords = mesh.nodeCoordinatesAsFloat
         coords_collector += [coords[mi * 3 + pi] * 10 for (mi, pi) in itertools.product(mesh.nodeIndices, [0, 1, 2])]
@@ -193,7 +197,7 @@ class SliceCommand(Fusion360CommandBase):
                              'machine_end_gcode': interpolated_end_gcode, **f.prepend_dict}
         settings = deepcopy({**self.computed_values, **self.changed_machine_settings, **self.changed_settings,
                              **last_minute_swaps})
-        bodies = [BRepBody.cast(b) for b in input_values['selection']]
+        bodies = input_values['selection']
         slider = self.layer_slider
         if settings == self.running_settings and self.running_models == bodies:
             if self.engine_endpoint and self.engine_endpoint['done']:
@@ -368,6 +372,7 @@ class SliceCommand(Fusion360CommandBase):
         tab_child = CommandInputs.cast(tab_models.children)
         selection_input = tab_child.addSelectionInput('selection', 'Body', 'Select the body to slice')
         selection_input.addSelectionFilter('Bodies')
+        selection_input.addSelectionFilter('MeshBodies')
         selection_input.setSelectionLimits(1, 0)
         # noinspection PyArgumentList
         for attr in AppObjects().design.findAttributes('FusedCura', 'selected_for_printing'):
