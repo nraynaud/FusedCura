@@ -22,7 +22,7 @@ _SIGNATURE = 0x2BAD << 16 | 1 << 8
 _CLOSE_SOCKET = 0xf0f0f0f0
 
 
-def run_engine(slice_message: Slice, event_handler, keep_alive_handler=None):
+def run_engine(slice_message: Slice, event_handler, child_started_handler=None, keep_alive_handler=None):
     with open(engine_log_file, 'a+') as log_file:
         print(datetime.now(), file=log_file, flush=True)
         encoded_message = Slice.dumps(slice_message)
@@ -41,6 +41,8 @@ def run_engine(slice_message: Slice, event_handler, keep_alive_handler=None):
             child_process = Popen(
                 [config['curaengine'], 'connect', "%s:%s" % name, '-j', fdmprinterfile], stdout=log_file,
                 stderr=log_file, **extra_params)
+            if child_started_handler:
+                child_started_handler(child_process)
             try:
                 print(child_process, file=log_file, flush=True)
                 print(child_process.poll(), file=log_file, flush=True)

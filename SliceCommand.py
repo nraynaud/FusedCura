@@ -45,6 +45,9 @@ def run_engine_in_other_thread(message, endpoint):
         if endpoint.get('canceled'):
             raise CancelException
 
+    def child_started(process):
+        endpoint['child_process'] = process
+
     previous_time = int(time() / 2)
     prefix = None
     with tempfile.TemporaryFile() as gcode_collector:
@@ -55,7 +58,10 @@ def run_engine_in_other_thread(message, endpoint):
                 fire_if_not_canceled(received_type.symbol)
                 previous_time = new_time
             handle_cancel()
-            print(received_type.symbol)
+            if received_type.symbol == 'cura.proto.Progress':
+                print('Progress' + str(received_type.loads(raw_received).amount))
+            else:
+                print(received_type.symbol)
             if received_type.symbol == 'cura.proto.PrintTimeMaterialEstimates':
                 endpoint['estimates'] = received_type.loads(raw_received)
                 complete_gcode = tempfile.NamedTemporaryFile()
@@ -97,7 +103,7 @@ def run_engine_in_other_thread(message, endpoint):
                 fire_if_not_canceled('layer|' + str(layer.id))
 
         try:
-            run_engine(message, on_message, handle_cancel)
+            run_engine(message, on_message, child_started, handle_cancel)
         except CancelException:
             print('CANCEL')
             return
@@ -180,6 +186,8 @@ class SliceCommand(Fusion360CommandBase):
     def cancel_engine(self):
         if self.engine_endpoint:
             self.engine_endpoint['canceled'] = True
+            if 'child_process' in self.engine_endpoint:
+                self.engine_endpoint['child_process'].terminate()
             self.engine_event.remove(self.engine_endpoint['handler'])
 
     def on_preview(self, command: Command, inputs: CommandInputs, args, input_values):
