@@ -32,9 +32,15 @@ def run_engine(slice_message: Slice, event_handler, keep_alive_handler=None):
             server_socket.bind(('127.0.0.1', 0))
             server_socket.listen(5)
             name = server_socket.getsockname()
+            extra_params = {}
+            if os.name == 'nt':
+                from subprocess import STARTUPINFO, STARTF_USESHOWWINDOW
+                info = STARTUPINFO()
+                info.dwFlags |= STARTF_USESHOWWINDOW
+                extra_params['startupinfo'] = info
             child_process = Popen(
-                [config['curaengine'], 'connect', "%s:%s" % name, '-j', fdmprinterfile],
-                stdout=log_file, stderr=log_file)
+                [config['curaengine'], 'connect', "%s:%s" % name, '-j', fdmprinterfile], stdout=log_file,
+                stderr=log_file, **extra_params)
             try:
                 print(child_process, file=log_file, flush=True)
                 print(child_process.poll(), file=log_file, flush=True)
