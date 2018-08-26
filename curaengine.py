@@ -22,6 +22,17 @@ _SIGNATURE = 0x2BAD << 16 | 1 << 8
 _CLOSE_SOCKET = 0xf0f0f0f0
 
 
+def recvall(sock, n):
+    # Helper function to recv n bytes or return None if EOF is hit
+    data = b''
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            return None
+        data += packet
+    return data
+
+
 def run_engine(slice_message: Slice, event_handler, child_started_handler=None, keep_alive_handler=None):
     with open(engine_log_file, 'a+') as log_file:
         print(datetime.now(), file=log_file, flush=True)
@@ -52,7 +63,7 @@ def run_engine(slice_message: Slice, event_handler, child_started_handler=None, 
                 client_socket.send(struct.pack("!I", symbol_message_dict['cura.proto.Slice'].hash))
                 client_socket.send(encoded_message)
                 while 1:
-                    process = client_socket.recv(4, socket.MSG_WAITALL)
+                    process = client_socket.recv(4)
                     if len(process) == 4:
                         unpacked = struct.unpack('>I', process)[0]
                         if unpacked == 0:
@@ -63,10 +74,10 @@ def run_engine(slice_message: Slice, event_handler, child_started_handler=None, 
                             print('_CLOSE_SOCKET')
                             return
                         if unpacked == _SIGNATURE:
-                            size = struct.unpack('>I', client_socket.recv(4, socket.MSG_WAITALL))[0]
-                            type_id = struct.unpack('>I', client_socket.recv(4, socket.MSG_WAITALL))[0]
+                            size = struct.unpack('>I', client_socket.recv(4))[0]
+                            type_id = struct.unpack('>I', client_socket.recv(4))[0]
                             type_def = hash_message_dict[type_id]
-                            res3 = client_socket.recv(size, socket.MSG_WAITALL) if size else b''
+                            res3 = recvall(client_socket, size) if size else b''
                             event_handler(res3, type_def)
                             continue
                         break
@@ -91,5 +102,3 @@ def parse_segment(segment, height):
         return _2_to_3(floats, height / 1000)
     else:
         return floats
-
-
