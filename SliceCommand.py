@@ -1,6 +1,7 @@
 import array
 import itertools
 import json
+import re
 import shutil
 import tempfile
 import threading
@@ -181,6 +182,16 @@ def compute_layer_type_preview(layer, layer_id, type, precomputed_layers):
         precomputed_layers[layer_id][type] = bodies
 
 
+def list_of_str_to_filename(str_list):
+    name = '_'.join(str_list)
+    # https://github.com/django/django/blob/201017df308266c7d5ed20181e6d0ffa5832e3e9/django/utils/text.py#L399
+    import unicodedata
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    name = re.sub('[^\w\s-]', '', name).strip().lower()
+    name = re.sub('[-\s]+', '-', name)
+    return name
+
+
 class SliceCommand(Fusion360CommandBase):
 
     def cancel_engine(self):
@@ -304,7 +315,7 @@ class SliceCommand(Fusion360CommandBase):
             dialog = AppObjects().ui.createFileDialog()
             dialog.title = 'Save GCode file'
             dialog.filter = 'GCode files (*.gcode)'
-            dialog.initialFilename = 'out'
+            dialog.initialFilename = list_of_str_to_filename([b.name for b in input_values['selection']])
             accessible = dialog.showSave()
             if accessible == DialogResults.DialogOK:
                 self.file_input.text = dialog.filename
