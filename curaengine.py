@@ -49,9 +49,10 @@ def run_engine(slice_message: Slice, event_handler, child_started_handler=None, 
                 info = STARTUPINFO()
                 info.dwFlags |= STARTF_USESHOWWINDOW
                 extra_params['startupinfo'] = info
-            child_process = Popen(
-                [config['curaengine'], 'connect', "%s:%s" % name, '-j', fdmprinterfile], stdout=log_file,
-                stderr=log_file, **extra_params)
+            cmd = ' '.join(['"' + config['curaengine'] + '"', 'connect', "%s:%s" % name, '-j',
+                            '"' + fdmprinterfile + '"'])
+            print(cmd, file=log_file, flush=True)
+            child_process = Popen(cmd, stdout=log_file, stderr=log_file, **extra_params, shell=True)
             if child_started_handler:
                 child_started_handler(child_process)
             try:
