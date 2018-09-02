@@ -4,6 +4,7 @@ from .Fusion360Utilities.Fusion360Utilities import AppObjects
 from .InfoCommand import InfoCommand
 from .ShowLogsCommand import ShowLogsCommand
 from .SliceCommand import SliceCommand
+from .ThreeDView import DemoPaletteShowCommand
 
 commands = []
 
@@ -57,6 +58,24 @@ command_definitions = [
         'toolbar_panel_id': 'Slice',
         'command_promoted': False,
         'class': ShowLogsCommand
+    },
+    {
+        'cmd_name': 'Fusion Palette Demo Command',
+        'cmd_description': 'Fusion Demo Palette Description',
+        'cmd_id': 'cmdID_palette_demo',
+        'workspace': 'FusionSolidEnvironment',
+        'toolbar_panel_id': 'Slice',
+        'command_visible': True,
+        'command_promoted': False,
+        'palette_id': 'demo_palette_id',
+        'palette_name': 'Demo Palette Name',
+        'palette_html_file_url': 'http://madebyevan.com/webgl-water/',
+        'palette_is_visible': True,
+        'palette_show_close_button': True,
+        'palette_is_resizable': True,
+        'palette_width': 500,
+        'palette_height': 600,
+        'class': DemoPaletteShowCommand
     }
 ]
 

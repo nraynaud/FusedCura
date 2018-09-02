@@ -1,0 +1,60 @@
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%
+        }
+    </style>
+    <script src="three.js"></script>
+</head>
+<body>
+<button onclick="test(null);console.log('click');">redraw</button>
+<script>
+    var scene = new THREE.Scene();
+    var renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+    var lineMaterial = new THREE.LineBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.5});
+    var meshMaterial = new THREE.MeshPhongMaterial({
+        color: 0x156289,
+        emissive: 0x072534,
+        side: THREE.DoubleSide,
+        flatShading: true
+    });
+    var lights = [];
+    lights[0] = new THREE.PointLight(0xffffff, 1, 0);
+    lights[1] = new THREE.PointLight(0xffffff, 1, 0);
+    lights[2] = new THREE.PointLight(0xffffff, 1, 0);
+
+    lights[0].position.set(0, 200, 0);
+    lights[1].position.set(100, 200, 100);
+    lights[2].position.set(-100, -200, -100);
+
+    scene.add(lights[0]);
+    scene.add(lights[1]);
+    scene.add(lights[2]);
+    var geometry = new THREE.SphereBufferGeometry(100, 32, 32);
+    var group = new THREE.Group();
+    group.add(new THREE.LineSegments(geometry, lineMaterial));
+    group.add(new THREE.Mesh(geometry, meshMaterial));
+    scene.add(group);
+    var camera2 = new THREE.OrthographicCamera(-150, 150, -150, 150, 0, 10000000);
+    camera2.position.set(0, 0, 1500);
+    camera2.lookAt(new THREE.Vector3(0, 0, 0));
+    test = function () {
+        //requestAnimationFrame(animate);
+        group.rotation.x += 0.1;
+        var renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.render(scene, camera2);
+    };
+    //animate();
+
+</script>
+</body>
+</html>
