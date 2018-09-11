@@ -1,6 +1,8 @@
 import array
+import datetime
 import itertools
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -17,7 +19,7 @@ from adsk.core import Command, Vector3D, CommandInputs, DialogResults, CustomEve
 from adsk.fusion import BRepBody, CustomGraphicsCoordinates, TemporaryBRepManager
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 from .Fusion360Utilities.Fusion360Utilities import AppObjects
-from .curaengine import run_engine, parse_segment
+from .curaengine import run_engine, parse_segment, TIME_KEYS
 from .messages import Slice, dict_to_setting_list, ObjectList, Object, LineType, Extruder
 from .settings import setting_types, collect_changed_setting_if_different_from_parent, \
     setting_tree_to_dict_and_default, useless_settings, \
@@ -248,6 +250,13 @@ class SliceCommand(Fusion360CommandBase):
 
                 AppObjects().app.activeViewport.refresh()
                 self.info_box.text = 'preview visible'
+                estimates = self.engine_endpoint['estimates']
+                time_elements = list([(k, estimates[k]) for k in TIME_KEYS if k in estimates])
+                total_time = sum([v for k, v in time_elements])
+                time_elements = [('total_time', total_time)] + time_elements
+                time_messages = '\n'.join(
+                    ['%s: %s' % (k, str(datetime.timedelta(seconds=round(v)))) for k, v in time_elements])
+                self.time_box.text = time_messages
             return
         self.running_settings = settings
         print('setting', settings)
@@ -280,6 +289,7 @@ class SliceCommand(Fusion360CommandBase):
         self.engine_event.add(handler)
         self.engine_endpoint = endpoint
         self.info_box.text = 'computing preview ...'
+        self.time_box.text = 'computing preview ...'
         threading.Thread(target=run_engine_in_other_thread, args=[slice_msg, endpoint]).start()
 
     def on_destroy(self, command: Command, inputs: CommandInputs, reason, input_values):
@@ -366,7 +376,11 @@ class SliceCommand(Fusion360CommandBase):
     def on_create(self, command: Command, inputs: CommandInputs):
         command.isExecutedWhenPreEmpted = False
         command.isAutoExecute = False
-        self.engine_event = AppObjects().app.registerCustomEvent(engine_event_id)
+        try:
+            self.engine_event = AppObjects().app.registerCustomEvent(engine_event_id)
+        except:
+            AppObjects().app.unregisterCustomEvent(engine_event_id)
+            self.engine_event = AppObjects().app.registerCustomEvent(engine_event_id)
         self.engine_endpoint = None
         configuration = read_configuration()
         if not configuration:
@@ -416,6 +430,8 @@ class SliceCommand(Fusion360CommandBase):
             label.isReadOnly = True
             table.addCommandInput(label, (k.value - 1) // 3, ((k.value - 1) % 3) * 2 + 1)
             table.addCommandInput(v, (k.value - 1) // 3, ((k.value - 1) % 3) * 2)
+        self.time_box = tab_child.addTextBoxCommandInput('time_box', 'string', 'time_box', 5, True)
+        self.time_box.isFullWidth = True
         settings = get_config(fdmprinterfile, useless_settings)
         (self.global_settings_definitions, self.global_settings_defaults) = setting_tree_to_dict_and_default(settings)
         self.changed_machine_settings = read_machine_settings(self.global_settings_definitions,

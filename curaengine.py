@@ -14,6 +14,10 @@ from .settings import read_configuration, fdmprinterfile
 # _exec_file = '/Applications/Ultimaker Cura.app/Contents/MacOS/CuraEngine'
 # _settings_file = '/Applications/Ultimaker Cura.app/Contents/MacOS/resources/definitions/fdmprinter.def.json'
 
+TIME_KEYS = ['float time_none', 'time_inset_0', 'time_inset_x', 'time_skin', 'time_support',
+             'time_skirt =', 'time_infill', 'time_support_infill', 'time_travel', 'time_retract',
+             'time_support_interface']
+
 engine_log_file = os.path.join(user_log_dir('FusedCura', 'nraynaud'), 'engine.log')
 os.makedirs(dirname(engine_log_file), exist_ok=True)
 print(engine_log_file)
