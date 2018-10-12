@@ -204,7 +204,7 @@ def find_setting_in_stack(key, stack_of_dict):
 def get_config(file_name, useless_set=set()):
     preferred_order = ['resolution', 'shell', 'infill', 'material', 'speed', 'cooling', 'support', 'travel',
                        'machine_settings', 'experimental', 'platform_adhesion']
-    file_content = Path(file_name).read_text()
+    file_content = Path(file_name).read_text(encoding='utf-8')
     loaded = json.JSONDecoder(object_pairs_hook=OrderedDict).decode(file_content)['settings']
     other_keys = [k for k in loaded.keys() if k not in set(preferred_order)]
     re_ordered_dict = OrderedDict([(k, loaded[k]) for k in preferred_order + other_keys if k in loaded])
